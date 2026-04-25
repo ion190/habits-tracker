@@ -1,0 +1,28 @@
+/** Format seconds → '45m' or '1h 23m' */
+export function formatDuration(seconds: number): string {
+  if (seconds <= 0) return '0m'
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`
+  const h = Math.floor(seconds / 3600)
+  const m = Math.round((seconds % 3600) / 60)
+  return m > 0 ? `${h}h ${m}m` : `${h}h`
+}
+
+/** ISO date string → 'YYYY-MM-DD' */
+export function toDateKey(iso: string): string {
+  return iso.slice(0, 10)
+}
+
+/** Start of current ISO week (Monday) */
+export function startOfWeek(): Date {
+  const d = new Date()
+  const day = d.getDay()
+  const diff = day === 0 ? 6 : day - 1 // adjust so Mon=0
+  d.setDate(d.getDate() - diff)
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+/** Generate a simple unique id */
+export function makeId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+}
