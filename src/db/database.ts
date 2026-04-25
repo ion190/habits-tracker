@@ -1,0 +1,191 @@
+import Dexie, { type Table } from 'dexie'
+
+// ── Types ────────────────────────────────────────────────
+
+export interface Habit {
+  id: string
+  name: string
+  color: string
+  icon: string
+  frequency: 'daily' | 'weekly' | 'custom'
+  targetDays: number[]     // 0=Sun … 6=Sat
+  createdAt: string        // ISO string
+  archivedAt?: string
+}
+
+export interface HabitLog {
+  id: string
+  habitId: string
+  completedAt: string      // ISO string — drives the heatmap
+  note?: string
+}
+
+export interface Task {
+  id: string
+  title: string
+  description?: string
+  dueDate?: string
+  notificationTime?: string
+  completedAt?: string
+  createdAt: string
+  tags: string[]
+}
+
+export interface Exercise {
+  id: string
+  name: string
+  category: string
+  description?: string
+  imageUrl?: string        // base64
+  createdAt: string
+}
+
+export interface PlanExercise {
+  exerciseId: string
+  sets: number
+  reps: number
+  weight: number
+  restSeconds: number
+}
+
+export interface WorkoutPlan {
+  id: string
+  name: string
+  description?: string
+  exercises: PlanExercise[]
+  createdAt: string
+}
+
+export interface CompletedSet {
+  reps: number
+  weight: number
+  done: boolean
+  completedAt?: string
+}
+
+export interface CompletedExercise {
+  exerciseId: string
+  name: string
+  sets: CompletedSet[]
+}
+
+export interface CompletedWorkout {
+  id: string
+  workoutPlanId: string
+  workoutPlanName: string
+  startedAt: string
+  completedAt: string
+  totalDurationSeconds: number
+  exercises: CompletedExercise[]
+}
+
+// Active workout persisted to localStorage so timer survives page close
+export interface ActiveWorkout {
+  workoutPlanId: string
+  workoutPlanName: string
+  startedAt: string        // ISO — subtract from Date.now() to get elapsed
+  exercises: CompletedExercise[]
+}
+
+// Full export shape — one JSON blob per user
+export interface ExportData {
+  exportedAt: string
+  version: number
+  habits: Habit[]
+  habitLogs: HabitLog[]
+  tasks: Task[]
+  exercises: Exercise[]
+  workoutPlans: WorkoutPlan[]
+  completedWorkouts: CompletedWorkout[]
+}
+
+// ── Database ─────────────────────────────────────────────
+
+class RitualsDB extends Dexie {
+  habits!: Table<Habit>
+  habitLogs!: Table<HabitLog>
+  tasks!: Table<Task>
+  exercises!: Table<Exercise>
+  workoutPlans!: Table<WorkoutPlan>
+  completedWorkouts!: Table<CompletedWorkout>
+
+  constructor() {
+    super('RitualsDB')
+    this.version(1).stores({
+      habits:            '&id, name, frequency, archivedAt',
+      habitLogs:         '&id, habitId, completedAt',
+      tasks:             '&id, dueDate, notificationTime, completedAt',
+      exercises:         '&id, name, category',
+      workoutPlans:      '&id, name',
+      completedWorkouts: '&id, workoutPlanId, startedAt',
+    })
+  }
+}
+
+export const db = new RitualsDB()
+
+// ── Helpers ──────────────────────────────────────────────
+
+export function generateId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+}
+
+// ── Import / Export ──────────────────────────────────────
+
+export async function exportDatabase(): Promise<void> {
+  const data: ExportData = {
+    exportedAt: new Date().toISOString(),
+    version: 1,
+    habits:            await db.habits.toArray(),
+    habitLogs:         await db.habitLogs.toArray(),
+    tasks:             await db.tasks.toArray(),
+    exercises:         await db.exercises.toArray(),
+    workoutPlans:      await db.workoutPlans.toArray(),
+    completedWorkouts: await db.completedWorkouts.toArray(),
+  }
+
+  const blob = new Blob([JSON.stringify(data, null, 2)], {
+    type: 'application/json',
+  })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `rituals-backup-${new Date().toISOString().slice(0, 10)}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export async function importDatabase(file: File): Promise<void> {
+  const text = await file.text()
+  const data: ExportData = JSON.parse(text)
+ 
+  if (!data.version || !data.habits) {
+    throw new Error('Invalid backup file — missing required fields.')
+  }
+ 
+  // Pass tables as an array to avoid Dexie's 6-argument TypeScript limit
+  const tables = [
+    db.habits,
+    db.habitLogs,
+    db.tasks,
+    db.exercises,
+    db.workoutPlans,
+    db.completedWorkouts,
+  ]
+ 
+  await db.transaction('rw', tables, async () => {
+    await db.habits.clear()
+    await db.habitLogs.clear()
+    await db.tasks.clear()
+    await db.exercises.clear()
+    await db.workoutPlans.clear()
+    await db.completedWorkouts.clear()
+ 
+    if (data.habits?.length)            await db.habits.bulkAdd(data.habits)
+    if (data.habitLogs?.length)         await db.habitLogs.bulkAdd(data.habitLogs)
+    if (data.tasks?.length)             await db.tasks.bulkAdd(data.tasks)
+    if (data.exercises?.length)         await db.exercises.bulkAdd(data.exercises)
+    if (data.workoutPlans?.length)      await db.workoutPlans.bulkAdd(data.workoutPlans)
+    if (data.completedWorkouts?.length) await db.completedWorkouts.bulkAdd(data.completedWorkouts)
+  })
+}
