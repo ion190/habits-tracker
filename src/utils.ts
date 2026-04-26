@@ -26,3 +26,42 @@ export function startOfWeek(): Date {
 export function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 }
+
+/** Format date in 24h format with GMT+3 timezone */
+export function formatDateGMT3(isoString: string, options?: { dateOnly?: boolean; timeOnly?: boolean }): string {
+  const date = new Date(isoString)
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Africa/Cairo', // GMT+3
+    ...(options?.timeOnly ? {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    } : options?.dateOnly ? {
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    } : {
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }),
+  })
+  return formatter.format(date)
+}
+
+/** Format time only in 24h format with GMT+3 timezone */
+export function formatTimeGMT3(isoString: string): string {
+  return formatDateGMT3(isoString, { timeOnly: true })
+}
+
+/** Format date only with GMT+3 timezone */
+export function formatDateOnlyGMT3(isoString: string): string {
+  return formatDateGMT3(isoString, { dateOnly: true })
+}

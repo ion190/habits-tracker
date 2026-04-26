@@ -1,16 +1,18 @@
-// src/components/Sidebar.tsx
+import { useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
+import { db } from '../db/database'
+import type { Habit } from '../db/database'
 import { IconGrid, IconCheck, IconDumbbell, IconSettings } from './Icons'
 import SyncBadge from './SyncBadge'
 
-const links = [
-  { to: '/',         label: 'Dashboard', Icon: IconGrid },
-  { to: '/habits',   label: 'Habits',    Icon: IconCheck },
-  { to: '/workouts', label: 'Workouts',  Icon: IconDumbbell },
-  { to: '/settings', label: 'Settings',  Icon: IconSettings },
-]
-
 export default function Sidebar() {
+  const [habits, setHabits] = useState<Habit[]>([])
+  const [habitsOpen, setHabitsOpen] = useState(true)
+
+  useEffect(() => {
+    db.habits.filter(h => !h.archivedAt).toArray().then(setHabits)
+  }, [])
+
   return (
     <aside className="sidebar">
       <div className="sidebar-logo">
@@ -23,21 +25,44 @@ export default function Sidebar() {
 
       <nav className="sidebar-nav">
         <p className="sidebar-section">Menu</p>
-        {links.map(({ to, label, Icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={to === '/'}
-            className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
-          >
-            <Icon />
-            {label}
-          </NavLink>
-        ))}
+
+        <NavLink to="/dashboard" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+          <IconGrid /> Dashboard
+        </NavLink>
+
+        <div>
+          <div className="sidebar-link sidebar-parent" onClick={() => setHabitsOpen(o => !o)}>
+            <span style={{ display:'flex', alignItems:'center', gap:10 }}>
+              <IconCheck /> Habits
+            </span>
+            <span style={{ fontSize:10, opacity:0.5 }}>{habitsOpen ? '▲' : '▼'}</span>
+          </div>
+
+          {habitsOpen && (
+            <div className="sidebar-children">
+              <NavLink to="/habits" end className={({ isActive }) => `sidebar-link sidebar-child ${isActive ? 'active' : ''}`}>
+                All habits
+              </NavLink>
+              {habits.map(h => (
+                <NavLink key={h.id} to={`/habits/${h.id}`} className={({ isActive }) => `sidebar-link sidebar-child ${isActive ? 'active' : ''}`}>
+                  <span className="habit-dot-sm" style={{ background: h.color }} />
+                  {h.name}
+                </NavLink>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <NavLink to="/workouts" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+          <IconDumbbell /> Workouts
+        </NavLink>
+
+        <NavLink to="/settings" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+          <IconSettings /> Settings
+        </NavLink>
       </nav>
 
-      {/* Sync status sits at the bottom of the sidebar */}
-      <div style={{ marginTop: 'auto', paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+      <div style={{ marginTop:'auto', paddingTop:12, borderTop:'1px solid var(--border)' }}>
         <SyncBadge />
       </div>
     </aside>

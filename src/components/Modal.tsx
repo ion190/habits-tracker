@@ -15,6 +15,14 @@ export default function Modal({ title, onClose, children, width = 520 }: Props) 
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = ''
+    }
+  }, [])
+
   return (
     <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal" style={{ maxWidth: width }}>
