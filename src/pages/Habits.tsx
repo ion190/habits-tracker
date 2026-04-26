@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { db, generateId } from '../db/database'
+import { sync } from '../db/sync'
 import type { Habit, HabitLog } from '../db/database'
 import Modal from '../components/Modal'
 import { IconPlus, IconTrash, IconCheck } from '../components/Icons'
@@ -21,10 +22,10 @@ function HabitModal({
   onSave: (h: Habit) => void
   onClose: () => void
 }) {
-  const [name,      setName]      = useState(initial?.name ?? '')
-  const [color,     setColor]     = useState(initial?.color ?? COLORS[0])
-  const [frequency, setFrequency] = useState<Habit['frequency']>(initial?.frequency ?? 'daily')
-  const [targetDays,setTargetDays]= useState<number[]>(initial?.targetDays ?? [0,1,2,3,4,5,6])
+  const [name,       setName]       = useState(initial?.name ?? '')
+  const [color,      setColor]      = useState(initial?.color ?? COLORS[0])
+  const [frequency,  setFrequency]  = useState<Habit['frequency']>(initial?.frequency ?? 'daily')
+  const [targetDays, setTargetDays] = useState<number[]>(initial?.targetDays ?? [0,1,2,3,4,5,6])
 
   function toggleDay(d: number) {
     setTargetDays(prev =>
@@ -120,10 +121,9 @@ function HabitRow({
   onEdit: () => void
   onDelete: () => void
 }) {
-  const today    = toDateKey(new Date().toISOString())
+  const today     = toDateKey(new Date().toISOString())
   const doneToday = logs.some(l => l.habitId === habit.id && toDateKey(l.completedAt) === today)
 
-  // Last 7 days for the mini streak display
   const last7 = Array.from({ length: 7 }, (_, i) => {
     const d = new Date()
     d.setDate(d.getDate() - (6 - i))
@@ -146,7 +146,6 @@ function HabitRow({
         <p className="item-sub">{habit.frequency}</p>
       </div>
 
-      {/* Mini 7-day dots */}
       <div className="habit-dots">
         {last7.map(d => {
           const done = logs.some(l => l.habitId === habit.id && toDateKey(l.completedAt) === d)
@@ -189,15 +188,19 @@ export default function Habits() {
 
   useEffect(() => { reload() }, [])
 
+  // ── Writes go through sync ──────────────────────────────
+
   async function saveHabit(habit: Habit) {
-    await db.habits.put(habit)
+    await sync.put('habits', habit as unknown as Record<string, unknown>)
     reload()
   }
 
   async function deleteHabit(id: string) {
-    if (!confirm('Delete this habit and all its logs?')) return
-    await db.habits.delete(id)
-    await db.habitLogs.where('habitId').equals(id).delete()
+    // Delete habit
+    await sync.delete('habits', id)
+    // Delete all associated logs
+    const logs = await db.habitLogs.where('habitId').equals(id).toArray()
+    await Promise.all(logs.map(l => sync.delete('habitLogs', l.id)))
     reload()
   }
 
@@ -208,29 +211,28 @@ export default function Habits() {
       .first()
 
     if (existing) {
-      await db.habitLogs.delete(existing.id)
+      await sync.delete('habitLogs', existing.id)
     } else {
-      await db.habitLogs.add({
+      const log: HabitLog = {
         id:          generateId(),
         habitId,
         completedAt: new Date().toISOString(),
-      })
+      }
+      await sync.put('habitLogs', log as unknown as Record<string, unknown>)
     }
     reload()
   }
 
   if (loading) return <div className="page-loading">Loading…</div>
 
-  const today      = toDateKey(new Date().toISOString())
-  const todayLogs  = logs.filter(l => toDateKey(l.completedAt) === today)
+  const today     = toDateKey(new Date().toISOString())
+  const todayLogs = logs.filter(l => toDateKey(l.completedAt) === today)
 
   return (
     <div className="page">
       <div className="page-header">
         <h1>Habits</h1>
-        <p className="page-sub">
-          {todayLogs.length}/{habits.length} done today
-        </p>
+        <p className="page-sub">{todayLogs.length}/{habits.length} done today</p>
       </div>
 
       <div className="section-header">
@@ -241,11 +243,7 @@ export default function Habits() {
       </div>
 
       {habits.length === 0
-        ? (
-          <div className="card">
-            <p className="empty-hint">No habits yet. Add your first one!</p>
-          </div>
-        )
+        ? <div className="card"><p className="empty-hint">No habits yet. Add your first one!</p></div>
         : habits.map(h => (
           <HabitRow
             key={h.id}

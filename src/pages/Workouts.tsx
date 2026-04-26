@@ -1,22 +1,21 @@
 import { useEffect, useState, useRef } from 'react'
 import { db, generateId } from '../db/database'
+import { sync } from '../db/sync'
 import type { Exercise, WorkoutPlan, PlanExercise, CompletedWorkout } from '../db/database'
 import Modal from '../components/Modal'
 import { IconPlus, IconTrash, IconSettings } from '../components/Icons'
 import { formatDuration, startOfWeek } from '../utils'
 
-// ── Types ─────────────────────────────────────────────────
-
 interface PlanExerciseRow extends PlanExercise {
-  _key: string   // local UI key only
-  _name: string  // resolved name for display
+  _key:  string
+  _name: string
 }
 
-// ── Small components ──────────────────────────────────────
+// ── Quota bar ─────────────────────────────────────────────
 
 function QuotaBar({ done, target, onEdit }: { done: number; target: number; onEdit: () => void }) {
   const pct = Math.min(100, Math.round((done / Math.max(target, 1)) * 100))
-  const met = done >= target
+  const met  = done >= target
   return (
     <div className="card quota-section">
       <div className="quota-header">
@@ -24,9 +23,7 @@ function QuotaBar({ done, target, onEdit }: { done: number; target: number; onEd
           <h2 className="card-title" style={{ marginBottom: 4 }}>Weekly workout goal</h2>
           <p className="page-sub">{done} of {target} workouts completed this week</p>
         </div>
-        <button className="btn btn-ghost icon-btn" onClick={onEdit} title="Edit goal">
-          <IconSettings />
-        </button>
+        <button className="btn btn-ghost icon-btn" onClick={onEdit}><IconSettings /></button>
       </div>
       <div className="quota-bar-track" style={{ marginTop: 12 }}>
         <div className="quota-bar-fill" style={{ width: `${pct}%`, background: met ? '#22c55e' : 'var(--accent)' }} />
@@ -38,56 +35,43 @@ function QuotaBar({ done, target, onEdit }: { done: number; target: number; onEd
 
 // ── Exercise picker modal ─────────────────────────────────
 
-function ExercisePicker({
-  exercises, onPick, onClose
-}: {
+function ExercisePicker({ exercises, onPick, onClose }: {
   exercises: Exercise[]
   onPick: (ex: Exercise) => void
   onClose: () => void
 }) {
   const [q, setQ] = useState('')
   const filtered  = exercises.filter(e => e.name.toLowerCase().includes(q.toLowerCase()))
-
   return (
     <Modal title="Pick exercise" onClose={onClose} width={440}>
-      <input
-        className="field"
-        placeholder="Search exercises…"
-        value={q}
-        onChange={e => setQ(e.target.value)}
-        autoFocus
-      />
-      {filtered.length === 0
-        ? <p className="empty-hint">No exercises found.</p>
-        : (
-          <ul className="item-list" style={{ marginTop: 12, maxHeight: 320, overflowY: 'auto' }}>
-            {filtered.map(ex => (
-              <li key={ex.id} className="item-row" style={{ cursor: 'pointer' }} onClick={() => { onPick(ex); onClose() }}>
-                <div>
-                  <p className="item-name">{ex.name}</p>
-                  <p className="item-sub">{ex.category}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )
-      }
+      <input className="field" placeholder="Search…" value={q} onChange={e => setQ(e.target.value)} autoFocus />
+      <ul className="item-list" style={{ marginTop: 12, maxHeight: 320, overflowY: 'auto' }}>
+        {filtered.length === 0
+          ? <p className="empty-hint">No exercises found.</p>
+          : filtered.map(ex => (
+            <li key={ex.id} className="item-row" style={{ cursor: 'pointer' }} onClick={() => { onPick(ex); onClose() }}>
+              <div>
+                <p className="item-name">{ex.name}</p>
+                <p className="item-sub">{ex.category}</p>
+              </div>
+            </li>
+          ))
+        }
+      </ul>
     </Modal>
   )
 }
 
-// ── Create / Edit exercise modal ──────────────────────────
+// ── Exercise modal ────────────────────────────────────────
 
-function ExerciseModal({
-  initial, onSave, onClose
-}: {
+function ExerciseModal({ initial, onSave, onClose }: {
   initial?: Exercise
   onSave: (ex: Exercise) => void
   onClose: () => void
 }) {
-  const [name, setName]     = useState(initial?.name ?? '')
-  const [cat,  setCat]      = useState(initial?.category ?? '')
-  const [desc, setDesc]     = useState(initial?.description ?? '')
+  const [name, setName] = useState(initial?.name ?? '')
+  const [cat,  setCat]  = useState(initial?.category ?? '')
+  const [desc, setDesc] = useState(initial?.description ?? '')
 
   function submit() {
     if (!name.trim()) return
@@ -105,13 +89,13 @@ function ExerciseModal({
     <Modal title={initial ? 'Edit exercise' : 'New exercise'} onClose={onClose}>
       <div className="form-stack">
         <label className="form-label">Name *
-          <input className="field" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Bench Press" autoFocus />
+          <input className="field" value={name} onChange={e => setName(e.target.value)} autoFocus />
         </label>
         <label className="form-label">Category
-          <input className="field" value={cat} onChange={e => setCat(e.target.value)} placeholder="e.g. chest, legs, cardio" />
+          <input className="field" value={cat} onChange={e => setCat(e.target.value)} placeholder="e.g. chest, legs" />
         </label>
         <label className="form-label">Description
-          <textarea className="field" value={desc} onChange={e => setDesc(e.target.value)} rows={2} placeholder="Optional notes…" />
+          <textarea className="field" value={desc} onChange={e => setDesc(e.target.value)} rows={2} />
         </label>
         <div className="form-actions">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
@@ -122,19 +106,17 @@ function ExerciseModal({
   )
 }
 
-// ── Create / Edit plan modal ──────────────────────────────
+// ── Plan modal ────────────────────────────────────────────
 
-function PlanModal({
-  initial, exercises, onSave, onClose
-}: {
+function PlanModal({ initial, exercises, onSave, onClose }: {
   initial?: WorkoutPlan
   exercises: Exercise[]
   onSave: (plan: WorkoutPlan) => void
   onClose: () => void
 }) {
-  const [name, setName]   = useState(initial?.name ?? '')
-  const [desc, setDesc]   = useState(initial?.description ?? '')
-  const [rows, setRows]   = useState<PlanExerciseRow[]>(() =>
+  const [name, setName] = useState(initial?.name ?? '')
+  const [desc, setDesc] = useState(initial?.description ?? '')
+  const [rows, setRows] = useState<PlanExerciseRow[]>(() =>
     (initial?.exercises ?? []).map(pe => ({
       ...pe,
       _key:  generateId(),
@@ -144,23 +126,11 @@ function PlanModal({
   const [picking, setPicking] = useState(false)
 
   function addExercise(ex: Exercise) {
-    setRows(r => [...r, {
-      exerciseId:  ex.id,
-      sets:        3,
-      reps:        10,
-      weight:      0,
-      restSeconds: 60,
-      _key:        generateId(),
-      _name:       ex.name,
-    }])
+    setRows(r => [...r, { exerciseId: ex.id, sets: 3, reps: 10, weight: 0, restSeconds: 60, _key: generateId(), _name: ex.name }])
   }
 
   function updateRow(key: string, field: keyof PlanExercise, val: number) {
     setRows(r => r.map(row => row._key === key ? { ...row, [field]: val } : row))
-  }
-
-  function removeRow(key: string) {
-    setRows(r => r.filter(row => row._key !== key))
   }
 
   function submit() {
@@ -169,7 +139,7 @@ function PlanModal({
       id:          initial?.id ?? generateId(),
       name:        name.trim(),
       description: desc.trim(),
-      exercises:   rows.map(({ _key, _name, ...pe }) => pe),
+      exercises:   rows.map(({ _key: _k, _name: _n, ...pe }) => pe),
       createdAt:   initial?.createdAt ?? new Date().toISOString(),
     })
     onClose()
@@ -180,35 +150,31 @@ function PlanModal({
       <Modal title={initial ? 'Edit plan' : 'New workout plan'} onClose={onClose} width={620}>
         <div className="form-stack">
           <label className="form-label">Plan name *
-            <input className="field" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Push Day" autoFocus />
+            <input className="field" value={name} onChange={e => setName(e.target.value)} autoFocus />
           </label>
           <label className="form-label">Description
-            <input className="field" value={desc} onChange={e => setDesc(e.target.value)} placeholder="Optional" />
+            <input className="field" value={desc} onChange={e => setDesc(e.target.value)} />
           </label>
 
-          {/* Exercise rows */}
           <div>
             <p className="form-label" style={{ marginBottom: 8 }}>Exercises</p>
             {rows.length === 0 && <p className="empty-hint" style={{ padding: '12px 0' }}>No exercises added yet.</p>}
             {rows.map(row => (
               <div key={row._key} className="plan-ex-row">
                 <span className="plan-ex-name">{row._name}</span>
-                <label className="plan-ex-field">
-                  <span>Sets</span>
+                <label className="plan-ex-field"><span>Sets</span>
                   <input type="number" className="field field-sm" min={1} value={row.sets}
                     onChange={e => updateRow(row._key, 'sets', +e.target.value)} />
                 </label>
-                <label className="plan-ex-field">
-                  <span>Reps</span>
+                <label className="plan-ex-field"><span>Reps</span>
                   <input type="number" className="field field-sm" min={1} value={row.reps}
                     onChange={e => updateRow(row._key, 'reps', +e.target.value)} />
                 </label>
-                <label className="plan-ex-field">
-                  <span>kg</span>
+                <label className="plan-ex-field"><span>kg</span>
                   <input type="number" className="field field-sm" min={0} value={row.weight}
                     onChange={e => updateRow(row._key, 'weight', +e.target.value)} />
                 </label>
-                <button className="btn btn-ghost icon-btn" onClick={() => removeRow(row._key)}>
+                <button className="btn btn-ghost icon-btn" onClick={() => setRows(r => r.filter(x => x._key !== row._key))}>
                   <IconTrash />
                 </button>
               </div>
@@ -225,41 +191,30 @@ function PlanModal({
         </div>
       </Modal>
 
-      {picking && (
-        <ExercisePicker
-          exercises={exercises}
-          onPick={addExercise}
-          onClose={() => setPicking(false)}
-        />
-      )}
+      {picking && <ExercisePicker exercises={exercises} onPick={addExercise} onClose={() => setPicking(false)} />}
     </>
   )
 }
 
 // ── Plan card ─────────────────────────────────────────────
 
-function PlanCard({
-  plan, exercises, onEdit, onDelete
-}: {
+function PlanCard({ plan, exercises, onEdit, onDelete }: {
   plan: WorkoutPlan
   exercises: Exercise[]
   onEdit: () => void
   onDelete: () => void
 }) {
   const [open, setOpen] = useState(false)
-
   return (
     <div className="plan-card">
       <div className="plan-card-header">
         <div style={{ flex: 1, minWidth: 0 }}>
           <p className="item-name">{plan.name}</p>
           {plan.description && <p className="item-sub">{plan.description}</p>}
-          <p className="item-sub" style={{ marginTop: 2 }}>{plan.exercises.length} exercise{plan.exercises.length !== 1 ? 's' : ''}</p>
+          <p className="item-sub">{plan.exercises.length} exercise{plan.exercises.length !== 1 ? 's' : ''}</p>
         </div>
         <div className="plan-card-actions">
-          <button className="btn btn-ghost" onClick={() => setOpen(o => !o)}>
-            {open ? 'Hide' : 'View'}
-          </button>
+          <button className="btn btn-ghost" onClick={() => setOpen(o => !o)}>{open ? 'Hide' : 'View'}</button>
           <button className="btn btn-ghost" onClick={onEdit}>Edit</button>
           <button className="btn btn-ghost danger" onClick={onDelete}><IconTrash /></button>
         </div>
@@ -272,13 +227,7 @@ function PlanCard({
             : (
               <table className="ex-table">
                 <thead>
-                  <tr>
-                    <th>Exercise</th>
-                    <th>Sets</th>
-                    <th>Reps</th>
-                    <th>Weight</th>
-                    <th>Rest</th>
-                  </tr>
+                  <tr><th>Exercise</th><th>Sets</th><th>Reps</th><th>Weight</th><th>Rest</th></tr>
                 </thead>
                 <tbody>
                   {plan.exercises.map((pe, i) => {
@@ -303,19 +252,16 @@ function PlanCard({
   )
 }
 
-// ── Main Workouts page ────────────────────────────────────
+// ── Main page ─────────────────────────────────────────────
 
 export default function Workouts() {
-  const [plans,       setPlans]       = useState<WorkoutPlan[]>([])
-  const [exercises,   setExercises]   = useState<Exercise[]>([])
-  const [recentW,     setRecentW]     = useState<CompletedWorkout[]>([])
-  const [loading,     setLoading]     = useState(true)
-
-  // Modals
-  const [planModal,   setPlanModal]   = useState<'new' | WorkoutPlan | null>(null)
-  const [exModal,     setExModal]     = useState<'new' | Exercise | null>(null)
-  const [goalModal,   setGoalModal]   = useState(false)
-
+  const [plans,     setPlans]     = useState<WorkoutPlan[]>([])
+  const [exercises, setExercises] = useState<Exercise[]>([])
+  const [recentW,   setRecentW]   = useState<CompletedWorkout[]>([])
+  const [loading,   setLoading]   = useState(true)
+  const [planModal, setPlanModal] = useState<'new' | WorkoutPlan | null>(null)
+  const [exModal,   setExModal]   = useState<'new' | Exercise | null>(null)
+  const [goalModal, setGoalModal] = useState(false)
   const [weeklyTarget, setWeeklyTarget] = useState(() =>
     parseInt(localStorage.getItem('weeklyWorkoutTarget') ?? '3')
   )
@@ -335,27 +281,27 @@ export default function Workouts() {
 
   useEffect(() => { reload() }, [])
 
-  // --- Handlers ---
+  // ── Writes through sync ─────────────────────────────────
 
   async function savePlan(plan: WorkoutPlan) {
-    await db.workoutPlans.put(plan)
+    await sync.put('workoutPlans', plan as unknown as Record<string, unknown>)
     reload()
   }
 
   async function deletePlan(id: string) {
     if (!confirm('Delete this workout plan?')) return
-    await db.workoutPlans.delete(id)
+    await sync.delete('workoutPlans', id)
     reload()
   }
 
   async function saveExercise(ex: Exercise) {
-    await db.exercises.put(ex)
+    await sync.put('exercises', ex as unknown as Record<string, unknown>)
     reload()
   }
 
   async function deleteExercise(id: string) {
     if (!confirm('Delete this exercise?')) return
-    await db.exercises.delete(id)
+    await sync.delete('exercises', id)
     reload()
   }
 
@@ -379,46 +325,28 @@ export default function Workouts() {
         <p className="page-sub">Plans, exercises and history</p>
       </div>
 
-      {/* Quota */}
-      <QuotaBar
-        done={workoutsThisWeek.length}
-        target={weeklyTarget}
-        onEdit={() => setGoalModal(true)}
-      />
+      <QuotaBar done={workoutsThisWeek.length} target={weeklyTarget} onEdit={() => setGoalModal(true)} />
 
-      {/* Workout Plans */}
+      {/* Plans */}
       <section>
         <div className="section-header">
           <h2 className="card-title" style={{ marginBottom: 0 }}>Workout plans</h2>
-          <button className="btn btn-primary" onClick={() => setPlanModal('new')}>
-            <IconPlus /> New plan
-          </button>
+          <button className="btn btn-primary" onClick={() => setPlanModal('new')}><IconPlus /> New plan</button>
         </div>
         {plans.length === 0
-          ? (
-            <div className="card">
-              <p className="empty-hint">No plans yet. Create one to get started.</p>
-            </div>
-          )
+          ? <div className="card"><p className="empty-hint">No plans yet.</p></div>
           : plans.map(plan => (
-            <PlanCard
-              key={plan.id}
-              plan={plan}
-              exercises={exercises}
-              onEdit={() => setPlanModal(plan)}
-              onDelete={() => deletePlan(plan.id)}
-            />
+            <PlanCard key={plan.id} plan={plan} exercises={exercises}
+              onEdit={() => setPlanModal(plan)} onDelete={() => deletePlan(plan.id)} />
           ))
         }
       </section>
 
-      {/* Exercise database */}
+      {/* Exercise DB */}
       <section>
         <div className="section-header">
           <h2 className="card-title" style={{ marginBottom: 0 }}>Exercise database</h2>
-          <button className="btn btn-secondary" onClick={() => setExModal('new')}>
-            <IconPlus /> New exercise
-          </button>
+          <button className="btn btn-secondary" onClick={() => setExModal('new')}><IconPlus /> New exercise</button>
         </div>
         <div className="card">
           {exercises.length === 0
@@ -443,7 +371,7 @@ export default function Workouts() {
         </div>
       </section>
 
-      {/* Recent completed workouts */}
+      {/* History */}
       <section>
         <h2 className="card-title">Completed workouts</h2>
         <div className="card">
@@ -474,8 +402,7 @@ export default function Workouts() {
         </div>
       </section>
 
-      {/* ── Modals ── */}
-
+      {/* Modals */}
       {planModal && (
         <PlanModal
           initial={planModal === 'new' ? undefined : planModal}
@@ -484,7 +411,6 @@ export default function Workouts() {
           onClose={() => setPlanModal(null)}
         />
       )}
-
       {exModal && (
         <ExerciseModal
           initial={exModal === 'new' ? undefined : exModal}
@@ -492,20 +418,11 @@ export default function Workouts() {
           onClose={() => setExModal(null)}
         />
       )}
-
       {goalModal && (
         <Modal title="Edit weekly goal" onClose={() => setGoalModal(false)} width={360}>
           <div className="form-stack">
             <label className="form-label">Workouts per week
-              <input
-                ref={goalRef}
-                className="field"
-                type="number"
-                min={1}
-                max={14}
-                defaultValue={weeklyTarget}
-                autoFocus
-              />
+              <input ref={goalRef} className="field" type="number" min={1} max={14} defaultValue={weeklyTarget} autoFocus />
             </label>
             <div className="form-actions">
               <button className="btn btn-secondary" onClick={() => setGoalModal(false)}>Cancel</button>

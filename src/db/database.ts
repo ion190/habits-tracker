@@ -1,6 +1,7 @@
+// src/db/database.ts
 import Dexie, { type Table } from 'dexie'
 
-// ── Types ────────────────────────────────────────────────
+// ── Domain types (unchanged from before) ─────────────────
 
 export interface Habit {
   id: string
@@ -8,15 +9,15 @@ export interface Habit {
   color: string
   icon: string
   frequency: 'daily' | 'weekly' | 'custom'
-  targetDays: number[]     // 0=Sun … 6=Sat
-  createdAt: string        // ISO string
+  targetDays: number[]
+  createdAt: string
   archivedAt?: string
 }
 
 export interface HabitLog {
   id: string
   habitId: string
-  completedAt: string      // ISO string — drives the heatmap
+  completedAt: string
   note?: string
 }
 
@@ -36,7 +37,7 @@ export interface Exercise {
   name: string
   category: string
   description?: string
-  imageUrl?: string        // base64
+  imageUrl?: string
   createdAt: string
 }
 
@@ -79,15 +80,31 @@ export interface CompletedWorkout {
   exercises: CompletedExercise[]
 }
 
-// Active workout persisted to localStorage so timer survives page close
 export interface ActiveWorkout {
   workoutPlanId: string
   workoutPlanName: string
-  startedAt: string        // ISO — subtract from Date.now() to get elapsed
+  startedAt: string
   exercises: CompletedExercise[]
 }
 
-// Full export shape — one JSON blob per user
+// ── Sync queue ────────────────────────────────────────────
+// Every write that couldn't reach Firestore is stored here.
+// The SyncEngine flushes these when the device comes back online.
+
+export type SyncOperation = 'put' | 'delete'
+
+export interface SyncQueueEntry {
+  id: string                // local id for this queue entry
+  table: string             // which Firestore collection
+  recordId: string          // id of the affected document
+  operation: SyncOperation
+  data?: unknown            // full record for 'put', undefined for 'delete'
+  createdAt: string         // when the operation was queued
+  retries: number           // how many times we've tried
+}
+
+// ── Export / import shape ─────────────────────────────────
+
 export interface ExportData {
   exportedAt: string
   version: number
@@ -99,7 +116,7 @@ export interface ExportData {
   completedWorkouts: CompletedWorkout[]
 }
 
-// ── Database ─────────────────────────────────────────────
+// ── Database ──────────────────────────────────────────────
 
 class RitualsDB extends Dexie {
   habits!: Table<Habit>
@@ -108,34 +125,36 @@ class RitualsDB extends Dexie {
   exercises!: Table<Exercise>
   workoutPlans!: Table<WorkoutPlan>
   completedWorkouts!: Table<CompletedWorkout>
+  syncQueue!: Table<SyncQueueEntry>
 
   constructor() {
     super('RitualsDB')
-    this.version(1).stores({
+    this.version(2).stores({
       habits:            '&id, name, frequency, archivedAt',
       habitLogs:         '&id, habitId, completedAt',
       tasks:             '&id, dueDate, notificationTime, completedAt',
       exercises:         '&id, name, category',
       workoutPlans:      '&id, name',
       completedWorkouts: '&id, workoutPlanId, startedAt',
+      syncQueue:         '&id, table, recordId, createdAt',
     })
   }
 }
 
 export const db = new RitualsDB()
 
-// ── Helpers ──────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────
 
 export function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 }
 
-// ── Import / Export ──────────────────────────────────────
+// ── Import / Export ───────────────────────────────────────
 
 export async function exportDatabase(): Promise<void> {
   const data: ExportData = {
-    exportedAt: new Date().toISOString(),
-    version: 1,
+    exportedAt:        new Date().toISOString(),
+    version:           1,
     habits:            await db.habits.toArray(),
     habitLogs:         await db.habitLogs.toArray(),
     tasks:             await db.tasks.toArray(),
@@ -143,13 +162,10 @@ export async function exportDatabase(): Promise<void> {
     workoutPlans:      await db.workoutPlans.toArray(),
     completedWorkouts: await db.completedWorkouts.toArray(),
   }
-
-  const blob = new Blob([JSON.stringify(data, null, 2)], {
-    type: 'application/json',
-  })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href     = url
   a.download = `rituals-backup-${new Date().toISOString().slice(0, 10)}.json`
   a.click()
   URL.revokeObjectURL(url)
@@ -158,21 +174,12 @@ export async function exportDatabase(): Promise<void> {
 export async function importDatabase(file: File): Promise<void> {
   const text = await file.text()
   const data: ExportData = JSON.parse(text)
- 
-  if (!data.version || !data.habits) {
-    throw new Error('Invalid backup file — missing required fields.')
-  }
- 
-  // Pass tables as an array to avoid Dexie's 6-argument TypeScript limit
+  if (!data.version || !data.habits) throw new Error('Invalid backup file.')
+
   const tables = [
-    db.habits,
-    db.habitLogs,
-    db.tasks,
-    db.exercises,
-    db.workoutPlans,
-    db.completedWorkouts,
+    db.habits, db.habitLogs, db.tasks,
+    db.exercises, db.workoutPlans, db.completedWorkouts,
   ]
- 
   await db.transaction('rw', tables, async () => {
     await db.habits.clear()
     await db.habitLogs.clear()
@@ -180,7 +187,7 @@ export async function importDatabase(file: File): Promise<void> {
     await db.exercises.clear()
     await db.workoutPlans.clear()
     await db.completedWorkouts.clear()
- 
+
     if (data.habits?.length)            await db.habits.bulkAdd(data.habits)
     if (data.habitLogs?.length)         await db.habitLogs.bulkAdd(data.habitLogs)
     if (data.tasks?.length)             await db.tasks.bulkAdd(data.tasks)

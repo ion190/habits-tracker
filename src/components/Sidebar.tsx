@@ -1,5 +1,7 @@
+// src/components/Sidebar.tsx
 import { NavLink } from 'react-router-dom'
 import { IconGrid, IconCheck, IconDumbbell, IconSettings } from './Icons'
+import SyncBadge from './SyncBadge'
 
 const links = [
   { to: '/',         label: 'Dashboard', Icon: IconGrid },
@@ -11,7 +13,6 @@ const links = [
 export default function Sidebar() {
   return (
     <aside className="sidebar">
-      {/* Logo */}
       <div className="sidebar-logo">
         <svg width="28" height="28" viewBox="0 0 28 28">
           <rect width="28" height="28" rx="8" fill="var(--accent)" />
@@ -20,7 +21,6 @@ export default function Sidebar() {
         <span>Rituals</span>
       </div>
 
-      {/* Nav */}
       <nav className="sidebar-nav">
         <p className="sidebar-section">Menu</p>
         {links.map(({ to, label, Icon }) => (
@@ -35,6 +35,11 @@ export default function Sidebar() {
           </NavLink>
         ))}
       </nav>
+
+      {/* Sync status sits at the bottom of the sidebar */}
+      <div style={{ marginTop: 'auto', paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+        <SyncBadge />
+      </div>
     </aside>
   )
 }
