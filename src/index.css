@@ -70,7 +70,7 @@ a { color: inherit; text-decoration: none; }
 /* ── Root ───────────────────────────────────────────────── */
 #root {
   min-height: 100svh;
-  display: flex;
+  /* display: flex; */
 }
 
 /* ── App layout ─────────────────────────────────────────── */
@@ -1138,7 +1138,7 @@ select.field {
   min-height: 100svh;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: center !important;
   background: var(--bg);
   padding: 24px 16px;
 }
@@ -1146,6 +1146,7 @@ select.field {
 .auth-card {
   width: 100%;
   max-width: 400px;
+  margin: 0 auto;
   background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -1214,4 +1215,330 @@ select.field {
   text-align: center;
   font-size: 11px;
   color: var(--border);
+}
+
+/* ── Mobile Responsive Design ─────────────────────────── */
+@media (max-width: 768px) {
+  /* Dashboard layout - stack vertically */
+  .dashboard-layout {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  /* Right sidebar - move to top */
+  .right-sidebar {
+    width: 100%;
+    height: auto;
+    position: relative;
+    top: auto;
+    border-left: none;
+    border-bottom: 1px solid var(--border);
+    padding: 16px 12px;
+    overflow: visible;
+    margin-bottom: 12px;
+  }
+
+  .right-sidebar .rs-card {
+    margin-bottom: 8px;
+  }
+
+  /* Sidebar stays on LEFT, but text hidden and narrower */
+  .sidebar {
+    width: 60px;
+    padding: 12px 6px;
+    border-right: 1px solid var(--border);
+    height: 100svh;
+    position: sticky;
+    top: 0;
+    flex-direction: column;
+    gap: 2px;
+    z-index: auto;
+  }
+
+  .sidebar-logo {
+    display: none;
+  }
+
+  .sidebar-nav {
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+  }
+
+  .sidebar-link {
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 4px;
+    font-size: 9px;
+    width: 100%;
+    text-align: center;
+    min-width: 0;
+  }
+
+  .sidebar-link svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  /* Hide text labels on mobile sidebar */
+  .sidebar-link > span:last-child {
+    display: none;
+  }
+
+  .sidebar-parent {
+    display: none;
+  }
+
+  .sidebar-children {
+    display: none;
+  }
+
+  /* Main app area - no bottom margin needed */
+  .app-main {
+    overflow-y: auto;
+  }
+
+  /* Page padding - reduce on mobile */
+  .page {
+    padding: 16px 12px;
+    max-width: 100%;
+  }
+
+  /* Stats row - stack on mobile */
+  .stats-row {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .stat-card {
+    flex: 1;
+  }
+
+  /* Heatmap - make scrollable */
+  .heatmap-grid {
+    grid-template-columns: repeat(26, 1fr);
+  }
+
+  /* Modal - full screen on mobile */
+  .modal-backdrop {
+    padding: 12px;
+  }
+
+  .modal {
+    max-width: 100%;
+    border-radius: 12px;
+    max-height: 85svh;
+  }
+
+  /* Forms - full width on mobile */
+  .field,
+  .form-label input,
+  .form-label textarea,
+  .form-label select {
+    width: 100%;
+  }
+
+  /* Buttons */
+  .btn {
+    font-size: 14px;
+    padding: 10px 12px;
+  }
+
+  .btn-sm {
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+
+  /* Habit grid - 2 columns on mobile */
+  .habit-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  /* Day picker - smaller on mobile */
+  .day-picker {
+    gap: 4px;
+  }
+
+  .day-btn {
+    width: 32px;
+    height: 32px;
+    font-size: 11px;
+  }
+
+  /* Workout timer - adjust on mobile */
+  .workout-timer {
+    font-size: 12px;
+    padding: 8px 12px;
+  }
+
+  /* Workout card grid */
+  .workout-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Tasks Eisenhower Matrix - stack on mobile */
+  .task-matrix {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  /* Active workout - full width */
+  .active-workout {
+    border-radius: 0;
+  }
+
+  .aw-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .aw-exercises {
+    padding: 12px;
+  }
+
+  .exercise-item {
+    flex-direction: column;
+  }
+
+  /* Right sidebar sections - make them compact */
+  .rs-section {
+    margin-bottom: 12px;
+  }
+
+  .rs-label {
+    font-size: 12px;
+  }
+
+  .rs-big {
+    font-size: 20px;
+  }
+
+  /* Habit detail - stack on mobile */
+  .habit-detail-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* Settings - full width */
+  .settings-section {
+    margin-bottom: 16px;
+  }
+
+  /* Cards - reduce padding on mobile */
+  .card {
+    padding: 14px;
+  }
+
+  .card-title {
+    font-size: 13px;
+    margin-bottom: 12px;
+  }
+
+  /* General typography adjustments */
+  h1 {
+    font-size: 20px;
+  }
+
+  h2 {
+    font-size: 14px;
+  }
+
+  /* Page header */
+  .page-header {
+    margin-bottom: 12px;
+  }
+
+  /* Quota bar */
+  .quota-bar-track {
+    height: 6px;
+    border-radius: 3px;
+  }
+
+  .quota-bar-fill {
+    height: 100%;
+  }
+
+  /* Item row */
+  .item-row {
+    padding: 10px 0;
+  }
+
+  .item-name {
+    font-size: 13px;
+  }
+
+  .item-sub {
+    font-size: 11px;
+  }
+
+  /* Habit progress */
+  .habit-progress {
+    padding: 10px 0;
+  }
+
+  .habit-dot {
+    width: 8px;
+    height: 8px;
+  }
+
+  .habit-dots {
+    gap: 2px;
+  }
+}
+
+/* Extra small screens (phones in portrait) */
+@media (max-width: 480px) {
+  .page {
+    padding: 16px 8px;
+  }
+
+  .habit-grid {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .day-btn {
+    width: 28px;
+    height: 28px;
+    font-size: 10px;
+  }
+
+  .stat-card {
+    padding: 12px;
+  }
+
+  .stat-value {
+    font-size: 24px;
+  }
+
+  .auth-card {
+    padding: 24px 16px;
+  }
+
+  .heatmap-grid {
+    grid-template-columns: repeat(13, 1fr);
+    gap: 2px;
+  }
+
+  h1 {
+    font-size: 18px;
+  }
+
+  /* Modal adjustments */
+  .modal-box {
+    margin: 0;
+    max-height: 90svh;
+  }
+
+  /* Form elements */
+  .form-stack {
+    gap: 12px;
+  }
+
+  .form-label {
+    margin-bottom: 0;
+  }
 }
