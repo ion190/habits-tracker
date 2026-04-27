@@ -22,6 +22,16 @@ export function startOfWeek(): Date {
   return d
 }
 
+/** Convert day index from Sunday-first (0=Sun) to Monday-first (0=Mon) */
+export function sundayFirstToMondayFirst(sundayFirstIndex: number): number {
+  return sundayFirstIndex === 0 ? 6 : sundayFirstIndex - 1
+}
+
+/** Convert day index from Monday-first (0=Mon) to Sunday-first (0=Sun) */
+export function mondayFirstToSundayFirst(mondayFirstIndex: number): number {
+  return mondayFirstIndex === 6 ? 0 : mondayFirstIndex + 1
+}
+
 /** Generate a simple unique id */
 export function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
@@ -64,4 +74,50 @@ export function formatTimeGMT3(isoString: string): string {
 /** Format date only with GMT+3 timezone */
 export function formatDateOnlyGMT3(isoString: string): string {
   return formatDateGMT3(isoString, { dateOnly: true })
+}
+
+/** Theme management */
+export type Theme = 'light' | 'dark' | 'auto'
+
+export function getTheme(): Theme {
+  return (localStorage.getItem('theme') ?? 'auto') as Theme
+}
+
+export function setTheme(theme: Theme): void {
+  localStorage.setItem('theme', theme)
+  applyTheme(theme)
+}
+
+function applyTheme(theme: Theme): void {
+  const html = document.documentElement
+  
+  if (theme === 'auto') {
+    html.style.colorScheme = ''
+    if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      html.classList.add('dark')
+      html.classList.remove('light')
+    } else {
+      html.classList.add('light')
+      html.classList.remove('dark')
+    }
+  } else if (theme === 'dark') {
+    html.classList.add('dark')
+    html.classList.remove('light')
+    html.style.colorScheme = 'dark'
+  } else {
+    html.classList.add('light')
+    html.classList.remove('dark')
+    html.style.colorScheme = 'light'
+  }
+}
+
+export function initializeTheme(): void {
+  applyTheme(getTheme())
+  
+  // Listen for system theme changes when in auto mode
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (getTheme() === 'auto') {
+      applyTheme('auto')
+    }
+  })
 }

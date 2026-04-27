@@ -8,7 +8,6 @@ import { db, generateId } from './database'
 import type { SyncQueueEntry, SyncOperation } from './database'
 import type { Table } from 'dexie'
 
-// Map table names → Dexie table objects
 const dexieTables: Record<string, Table> = {
   habits:            db.habits,
   habitLogs:         db.habitLogs,
@@ -24,9 +23,7 @@ class SyncEngine {
   private uid: string | null = null
   private status: SyncStatus = 'offline'
   private listeners: Set<(s: SyncStatus) => void> = new Set()
-  private hydrated = false
-
-  // ── Init ────────────────────────────────────────────────
+  private _hydrated = false
 
   init(uid: string) {
     this.uid = uid
@@ -36,17 +33,8 @@ class SyncEngine {
       this.setStatus('syncing')
       this.flushQueue().then(() => this.setStatus('synced'))
     })
-
-    window.addEventListener('offline', () => {
-      this.setStatus('offline')
-    })
-
-    if (navigator.onLine && !this.hydrated) {
-      this.hydrate()
-    }
+    window.addEventListener('offline', () => this.setStatus('offline'))
   }
-
-  // ── Status observable ────────────────────────────────────
 
   onStatus(cb: (s: SyncStatus) => void) {
     this.listeners.add(cb)
@@ -61,13 +49,8 @@ class SyncEngine {
 
   getStatus(): SyncStatus { return this.status }
 
-  // ── Write ────────────────────────────────────────────────
-
   async put(table: string, record: Record<string, unknown>): Promise<void> {
-    // 1. Always write locally first — instant and offline-safe
     await dexieTables[table].put(record)
-
-    // 2. Try Firestore if online
     if (navigator.onLine && this.uid) {
       try {
         await setDoc(this.docRef(table, record.id as string), record)
@@ -76,16 +59,11 @@ class SyncEngine {
         console.warn(`[Sync] Firestore put failed for ${table}/${record.id}, queuing`, e)
       }
     }
-
-    // 3. Queue for later
     await this.enqueue('put', table, record.id as string, record)
   }
 
   async delete(table: string, id: string): Promise<void> {
-    // 1. Delete locally
     await dexieTables[table].delete(id)
-
-    // 2. Try Firestore
     if (navigator.onLine && this.uid) {
       try {
         await deleteDoc(this.docRef(table, id))
@@ -94,20 +72,10 @@ class SyncEngine {
         console.warn(`[Sync] Firestore delete failed for ${table}/${id}, queuing`, e)
       }
     }
-
-    // 3. Queue
     await this.enqueue('delete', table, id)
   }
 
-  // ── Queue ────────────────────────────────────────────────
-
-  private async enqueue(
-    operation: SyncOperation,
-    table: string,
-    recordId: string,
-    data?: unknown
-  ) {
-    // Replace any existing pending entry for this record
+  private async enqueue(operation: SyncOperation, table: string, recordId: string, data?: unknown) {
     const existing = await db.syncQueue
       .where('table').equals(table)
       .filter(e => e.recordId === recordId)
@@ -115,13 +83,8 @@ class SyncEngine {
     if (existing) await db.syncQueue.delete(existing.id)
 
     const entry: SyncQueueEntry = {
-      id:        generateId(),
-      table,
-      recordId,
-      operation,
-      data,
-      createdAt: new Date().toISOString(),
-      retries:   0,
+      id: generateId(), table, recordId, operation, data,
+      createdAt: new Date().toISOString(), retries: 0,
     }
     await db.syncQueue.add(entry)
   }
@@ -131,18 +94,12 @@ class SyncEngine {
     const entries = await db.syncQueue.orderBy('createdAt').toArray()
     if (entries.length === 0) return
 
-    console.log(`[Sync] Flushing ${entries.length} queued operations…`)
-
-    const chunks = chunkArray(entries, 490)
-    for (const chunk of chunks) {
+    for (const chunk of chunkArray(entries, 490)) {
       const batch = writeBatch(firestore)
       for (const entry of chunk) {
         const ref = this.docRef(entry.table, entry.recordId)
-        if (entry.operation === 'put' && entry.data) {
-          batch.set(ref, entry.data as Record<string, unknown>)
-        } else if (entry.operation === 'delete') {
-          batch.delete(ref)
-        }
+        if (entry.operation === 'put' && entry.data) batch.set(ref, entry.data as Record<string, unknown>)
+        else if (entry.operation === 'delete') batch.delete(ref)
       }
       try {
         await batch.commit()
@@ -150,30 +107,24 @@ class SyncEngine {
       } catch (e) {
         console.error('[Sync] Batch flush failed', e)
         for (const entry of chunk) {
-          if (entry.retries >= 5) {
-            await db.syncQueue.delete(entry.id)
-          } else {
-            await db.syncQueue.update(entry.id, { retries: entry.retries + 1 })
-          }
+          if (entry.retries >= 5) await db.syncQueue.delete(entry.id)
+          else await db.syncQueue.update(entry.id, { retries: entry.retries + 1 })
         }
       }
     }
   }
 
-  // ── Hydrate Firestore → Dexie ────────────────────────────
-
+  // Public — called after login to pull user's cloud data into Dexie
   async hydrate(): Promise<void> {
     if (!this.uid) return
-    this.hydrated = true
+    if (this._hydrated) return
+    this._hydrated = true
     console.log('[Sync] Hydrating from Firestore…')
-
     for (const table of Object.keys(dexieTables)) {
       try {
         const snap    = await getDocs(collection(firestore, 'users', this.uid, table))
         const records = snap.docs.map(d => d.data())
-        if (records.length > 0) {
-          await dexieTables[table].bulkPut(records as never[])
-        }
+        if (records.length > 0) await dexieTables[table].bulkPut(records as never[])
       } catch (e) {
         console.warn(`[Sync] Could not hydrate ${table}:`, e)
       }
@@ -181,16 +132,19 @@ class SyncEngine {
     console.log('[Sync] Hydration complete')
   }
 
-  // ── Helpers ──────────────────────────────────────────────
+  // Reset hydration flag when user changes (e.g. logout → login different account)
+  reset() {
+    this.uid = null
+    this._hydrated = false
+    this.setStatus('offline')
+  }
 
   private docRef(table: string, id: string) {
     if (!this.uid) throw new Error('SyncEngine not initialized')
     return doc(firestore, 'users', this.uid, table, id)
   }
 
-  getPendingCount(): Promise<number> {
-    return db.syncQueue.count()
-  }
+  getPendingCount(): Promise<number> { return db.syncQueue.count() }
 }
 
 function chunkArray<T>(arr: T[], size: number): T[][] {

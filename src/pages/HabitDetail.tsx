@@ -28,7 +28,8 @@ function getLastNDays(n: number): string[] {
 function Heatmap({ logs, color }: { logs: HabitLog[]; color: string }) {
   const days = getLastNDays(364)
   const map  = buildHeatmap(logs)
-  const pad  = new Date(days[0]).getDay()
+  const firstDayOfWeek = new Date(days[0]).getDay() // 0=Sun, 1=Mon...6=Sat
+  const pad  = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1 // Convert to Monday-first: 0=Mon, 6=Sun
   return (
     <div className="heatmap-wrap">
       <div className="heatmap-grid">

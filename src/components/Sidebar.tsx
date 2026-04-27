@@ -5,6 +5,13 @@ import type { Habit } from '../db/database'
 import { IconGrid, IconCheck, IconDumbbell, IconSettings } from './Icons'
 import SyncBadge from './SyncBadge'
 
+const IconChecklist = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M9 11l3 3L22 4" />
+    <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+  </svg>
+)
+
 export default function Sidebar() {
   const [habits, setHabits] = useState<Habit[]>([])
   const [habitsOpen, setHabitsOpen] = useState(true)
@@ -20,11 +27,11 @@ export default function Sidebar() {
           <rect width="28" height="28" rx="8" fill="var(--accent)" />
           <path d="M9 14h10M14 9v10" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
         </svg>
-        <span>Rituals</span>
+        <span>Journal</span>
       </div>
 
       <nav className="sidebar-nav">
-        <p className="sidebar-section">Menu</p>
+        {/* <p className="sidebar-section">Menu</p> */}
 
         <NavLink to="/dashboard" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
           <IconGrid /> Dashboard
@@ -52,6 +59,10 @@ export default function Sidebar() {
             </div>
           )}
         </div>
+
+        <NavLink to="/tasks" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+          <IconChecklist /> Tasks
+        </NavLink>
 
         <NavLink to="/workouts" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
           <IconDumbbell /> Workouts

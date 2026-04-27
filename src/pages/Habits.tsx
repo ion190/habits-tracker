@@ -3,6 +3,7 @@ import { db, generateId } from '../db/database'
 import { sync } from '../db/sync'
 import type { Habit, HabitLog } from '../db/database'
 import Modal from '../components/Modal'
+import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
 import { IconPlus, IconTrash, IconCheck } from '../components/Icons'
 import { toDateKey } from '../utils'
 
@@ -11,7 +12,7 @@ const COLORS = [
   '#ef4444','#ec4899','#14b8a6','#8b5cf6',
 ]
 
-const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
+const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
 
 // ── Create / Edit habit modal ─────────────────────────────
 
@@ -25,12 +26,26 @@ function HabitModal({
   const [name,       setName]       = useState(initial?.name ?? '')
   const [color,      setColor]      = useState(initial?.color ?? COLORS[0])
   const [frequency,  setFrequency]  = useState<Habit['frequency']>(initial?.frequency ?? 'daily')
-  const [targetDays, setTargetDays] = useState<number[]>(initial?.targetDays ?? [0,1,2,3,4,5,6])
+  const [targetDays, setTargetDays] = useState<number[]>(initial?.targetDays ?? [1,2,3,4,5]) // Mon-Fri by default
+  const [tags,       setTags]       = useState<string[]>(initial?.tags ?? [])
+  const [tagInput,   setTagInput]   = useState('')
 
   function toggleDay(d: number) {
     setTargetDays(prev =>
       prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d].sort()
     )
+  }
+
+  function addTag() {
+    const tag = tagInput.trim().toLowerCase()
+    if (tag && !tags.includes(tag)) {
+      setTags([...tags, tag])
+      setTagInput('')
+    }
+  }
+
+  function removeTag(tag: string) {
+    setTags(tags.filter(t => t !== tag))
   }
 
   function submit() {
@@ -41,7 +56,8 @@ function HabitModal({
       color,
       icon:       '',
       frequency,
-      targetDays: frequency === 'daily' ? [0,1,2,3,4,5,6] : targetDays,
+      targetDays: frequency === 'daily' ? [0,1,2,3,4,5,6] : targetDays, // daily = all days (0-6 = Mon-Sun)
+      tags,
       createdAt:  initial?.createdAt ?? new Date().toISOString(),
       archivedAt: initial?.archivedAt,
     })
@@ -52,7 +68,7 @@ function HabitModal({
     <Modal title={initial ? 'Edit habit' : 'New habit'} onClose={onClose} width={440}>
       <div className="form-stack">
         <label className="form-label">Name *
-          <input className="field" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Morning run" autoFocus />
+          <input className="field" value={name} onChange={e => setName(e.target.value)}  autoFocus />
         </label>
 
         <div className="form-label">
@@ -100,6 +116,49 @@ function HabitModal({
             </div>
           </div>
         )}
+
+        <div className="form-label">
+          Tags
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+            <input
+              type="text"
+              className="field"
+              placeholder="Add tag..."
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              onKeyPress={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag() } }}
+              style={{ flex: 1 }}
+            />
+            <button className="btn btn-secondary" onClick={addTag}>Add</button>
+          </div>
+          {tags.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {tags.map(tag => (
+                <span
+                  key={tag}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '4px 10px',
+                    background: 'var(--accent-bg)',
+                    border: '1px solid var(--accent-border)',
+                    borderRadius: 6,
+                    fontSize: 12,
+                  }}
+                >
+                  {tag}
+                  <button
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)' }}
+                    onClick={() => removeTag(tag)}
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
 
         <div className="form-actions">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
@@ -175,6 +234,8 @@ export default function Habits() {
   const [logs,    setLogs]    = useState<HabitLog[]>([])
   const [loading, setLoading] = useState(true)
   const [modal,   setModal]   = useState<'new' | Habit | null>(null)
+  const [deleteHabitId, setDeleteHabitId] = useState<string | null>(null)
+  const [deleteHabitName, setDeleteHabitName] = useState<string>('')
 
   async function reload() {
     const [h, l] = await Promise.all([
@@ -201,6 +262,7 @@ export default function Habits() {
     // Delete all associated logs
     const logs = await db.habitLogs.where('habitId').equals(id).toArray()
     await Promise.all(logs.map(l => sync.delete('habitLogs', l.id)))
+    setDeleteHabitId(null)
     reload()
   }
 
@@ -251,7 +313,10 @@ export default function Habits() {
             logs={logs}
             onToggle={toggleHabit}
             onEdit={() => setModal(h)}
-            onDelete={() => deleteHabit(h.id)}
+            onDelete={() => {
+              setDeleteHabitId(h.id)
+              setDeleteHabitName(h.name)
+            }}
           />
         ))
       }
@@ -261,6 +326,20 @@ export default function Habits() {
           initial={modal === 'new' ? undefined : modal}
           onSave={saveHabit}
           onClose={() => setModal(null)}
+        />
+      )}
+
+      {deleteHabitId && (
+        <ConfirmDeleteModal
+          title="Delete habit"
+          message="Are you sure you want to delete this habit? All habit logs will also be deleted."
+          itemName={deleteHabitName}
+          onConfirm={() => deleteHabit(deleteHabitId)}
+          onCancel={() => {
+            setDeleteHabitId(null)
+            setDeleteHabitName('')
+          }}
+          isDangerous
         />
       )}
     </div>
