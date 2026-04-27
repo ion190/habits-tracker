@@ -1,8 +1,6 @@
 // src/db/database.ts
 import Dexie, { type Table } from 'dexie'
 
-// ── Domain types (unchanged from before) ─────────────────
-
 export interface Habit {
   id: string
   name: string
