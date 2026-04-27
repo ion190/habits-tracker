@@ -70,6 +70,28 @@ a { color: inherit; text-decoration: none; }
 /* ── Root ───────────────────────────────────────────────── */
 #root {
   min-height: 100svh;
+  /* display: flex; */
+}
+
+/* ── App layout ─────────────────────────────────────────── */
+.app-layout {
+  display: flex;
+  width: 100%;
+  min-height: 100svh;
+}
+
+.app-main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+/* ── Sidebar ────────────────────────────────────────────── */
+.sidebar {
+  width: 210px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  padding: 20px 12px;
   display: flex;
 }
 
@@ -386,4 +408,1159 @@ a { color: inherit; text-decoration: none; }
   background: rgba(239, 68, 68, 0.1);
   color: #ef4444;
   border-color: rgba(239, 68, 68, 0.3);
+}
+
+
+/* Section header (title + action button side by side) */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+/* ── Quota bar ─────────────────────────────────────────── */
+
+.quota-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.quota-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.quota-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.quota-bar-track {
+  flex: 1;
+  height: 8px;
+  background: var(--border);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.quota-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 99px;
+  transition: width 0.4s ease;
+}
+
+.quota-label {
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── Modal ─────────────────────────────────────────────── */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 16px;
+}
+
+.modal {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  max-height: 90svh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-h);
+  margin: 0;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  line-height: 1;
+}
+
+.modal-close:hover { background: var(--border); }
+
+.modal-body {
+  padding: 20px 22px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── Form helpers ──────────────────────────────────────── */
+
+.form-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.field {
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--code-bg);
+  color: var(--text-h);
+  font-family: var(--sans);
+  font-size: 14px;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.field:focus { border-color: var(--accent); }
+
+.field-sm {
+  width: 64px;
+  text-align: center;
+  padding: 6px 8px;
+}
+
+textarea.field { resize: vertical; }
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+/* ── Buttons (additions) ───────────────────────────────── */
+
+.btn-ghost {
+  background: none;
+  border-color: transparent;
+  color: var(--text);
+}
+
+.btn-ghost:hover { background: var(--code-bg); color: var(--text-h); }
+
+.btn-ghost.danger { color: #ef4444; }
+.btn-ghost.danger:hover { background: rgba(239, 68, 68, 0.08); }
+
+.icon-btn {
+  padding: 7px;
+  border-radius: 7px;
+}
+
+/* ── Segmented control ─────────────────────────────────── */
+
+.seg-group {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.seg-btn {
+  flex: 1;
+  padding: 8px;
+  border: none;
+  border-right: 1px solid var(--border);
+  background: var(--code-bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.seg-btn:last-child { border-right: none; }
+
+.seg-btn.active {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+/* ── Color picker ──────────────────────────────────────── */
+
+.color-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.color-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.color-dot:hover { transform: scale(1.15); }
+
+.color-dot.selected {
+  border-color: var(--text-h);
+  transform: scale(1.15);
+}
+
+/* ── Day picker ────────────────────────────────────────── */
+
+.day-picker {
+  display: flex;
+  gap: 6px;
+}
+
+.day-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--code-bg);
+  color: var(--text);
+  font-size: 12px;
+  font-family: var(--sans);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.day-btn.active {
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-color: var(--accent-border);
+}
+
+/* ── Habit row card ────────────────────────────────────── */
+
+.habit-row-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+}
+
+.habit-check {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 2px solid var(--border);
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  color: white;
+}
+
+.habit-check.done { color: white; }
+
+/* 7-day mini dots */
+.habit-dots {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.habit-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.habit-dot.done { background: var(--accent); }
+
+/* ── Plan card ─────────────────────────────────────────── */
+
+.plan-card {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.plan-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.plan-card-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.plan-exercises {
+  border-top: 1px solid var(--border);
+  padding: 14px 16px;
+  overflow-x: auto;
+}
+
+/* ── Plan exercise row (inside modal) ──────────────────── */
+
+.plan-ex-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.plan-ex-row:last-child { border-bottom: none; }
+
+.plan-ex-name {
+  flex: 1;
+  font-size: 13.5px;
+  color: var(--text-h);
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.plan-ex-field {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 10px;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+/* ── Exercise table (plan view) ────────────────────────── */
+
+.ex-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  color: var(--text-h);
+}
+
+.ex-table th {
+  text-align: left;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text);
+  font-weight: 500;
+  padding: 0 10px 8px 0;
+}
+
+.ex-table td {
+  padding: 7px 10px 7px 0;
+  border-top: 1px solid var(--border);
+}
+
+.sync-badge {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+}
+ 
+.sync-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+ 
+.sync-label {
+  font-size: 11.5px;
+  color: var(--text);
+}
+ 
+
+/* Sidebar children (habit sub-links) */
+.sidebar-parent {
+  justify-content: space-between;
+  user-select: none;
+}
+ 
+.sidebar-children {
+  padding-left: 12px;
+}
+ 
+.sidebar-child {
+  font-size: 12.5px;
+  padding: 6px 10px;
+}
+ 
+.habit-dot-sm {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+ 
+/* Habit progress rows on dashboard */
+.habit-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+ 
+.habit-progress-row:last-child { border-bottom: none; }
+.habit-progress-row:hover { opacity: 0.8; }
+ 
+.done-pill {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  border: 1.5px solid var(--border);
+  color: var(--text);
+  flex-shrink: 0;
+}
+ 
+.done-pill.done {
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+ 
+/* Habit color pill (detail page header) */
+.habit-color-pill {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+ 
+/* select field */
+select.field {
+  appearance: none;
+  cursor: pointer;
+}
+
+
+/* Dashboard with right sidebar */
+.dashboard-layout {
+  display: flex;
+  min-height: 100svh;
+  align-items: flex-start;
+}
+
+.dashboard-layout .page {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Right sidebar */
+.right-sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  overflow-y: auto;
+  background: var(--bg);
+}
+
+.rs-card {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.rs-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.rs-stat {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: -0.5px;
+  line-height: 1;
+  margin: 0;
+}
+
+.rs-big {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1;
+  margin: 4px 0 6px;
+}
+
+.rs-sub {
+  font-size: 11px;
+  color: var(--text);
+  margin: 0;
+}
+
+.active-banner {
+  cursor: pointer;
+  border-color: rgba(34, 197, 94, 0.4) !important;
+  background: rgba(34, 197, 94, 0.06) !important;
+}
+
+/* Active workout overlay */
+.active-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  z-index: 200;
+  overflow-y: auto;
+}
+
+.active-workout {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.aw-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 10;
+}
+
+.aw-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-h);
+  margin: 0 0 4px;
+}
+
+.aw-sub {
+  font-size: 13px;
+  color: var(--text);
+  margin: 0;
+}
+
+.aw-exercises {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.aw-exercise-card {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+.aw-ex-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.aw-sets-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.aw-sets-table th {
+  text-align: left;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text);
+  padding: 0 8px 6px 0;
+}
+
+.aw-sets-table td {
+  padding: 5px 8px 5px 0;
+  border-top: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.aw-sets-table tr.set-done td {
+  opacity: 0.6;
+}
+
+.set-check-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1.5px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--sans);
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.set-check-btn.done {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+/* Start workout plan rows */
+.start-plan-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.start-plan-row:hover { opacity: 0.8; }
+
+.suggest-badge {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 20px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  border: 1px solid var(--accent-border);
+  flex-shrink: 0;
+}
+
+/* Exercise detail modal rows */
+.detail-row {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.detail-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text);
+  min-width: 70px;
+  flex-shrink: 0;
+}
+
+.detail-value {
+  font-size: 13.5px;
+  color: var(--text-h);
+}
+
+/* Workout heatmap in workouts page */
+.workout-heatmap-card {
+  margin-bottom: 12px;
+}
+
+/* ── Explicit theme overrides ─────────────────────────── */
+
+:root.light {
+  --text: #6b6375;
+  --text-h: #08060d;
+  --bg: #ececec;
+  --border: #e5e4e7;
+  --code-bg: #f4f3ec;
+  --accent: #aa3bff;
+  --accent-bg: rgba(170, 59, 255, 0.1);
+  --accent-border: rgba(170, 59, 255, 0.5);
+  --social-bg: rgba(244, 243, 236, 0.5);
+  --shadow: rgba(0, 0, 0, 0.1) 0 10px 15px -3px,
+            rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  color-scheme: light;
+}
+
+:root.dark {
+  --text: #9ca3af;
+  --text-h: #f3f4f6;
+  --bg: #16171d;
+  --border: #2e303a;
+  --code-bg: #1f2028;
+  --accent: #c084fc;
+  --accent-bg: rgba(192, 132, 252, 0.15);
+  --accent-border: rgba(192, 132, 252, 0.5);
+  --social-bg: rgba(47, 48, 58, 0.5);
+  --shadow: rgba(0, 0, 0, 0.4) 0 10px 15px -3px,
+            rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+  color-scheme: dark;
+}
+
+/* ── Auth page ──── */
+
+.auth-page {
+  min-height: 100svh;
+  display: flex;
+  align-items: center;
+  justify-content: center !important;
+  background: var(--bg);
+  padding: 24px 16px;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 36px 32px;
+  box-shadow: var(--shadow);
+}
+
+.auth-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.auth-logo-name {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-h);
+  letter-spacing: -0.3px;
+}
+
+.auth-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-h);
+  margin: 0 0 6px;
+  letter-spacing: -0.4px;
+}
+
+.auth-sub {
+  font-size: 13.5px;
+  color: var(--text);
+  margin: 0 0 24px;
+  line-height: 1.5;
+}
+
+.auth-submit {
+  width: 100%;
+  justify-content: center;
+  padding: 11px;
+  font-size: 15px;
+}
+
+.auth-switch {
+  margin-top: 20px;
+  text-align: center;
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.auth-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 13.5px;
+  font-family: var(--sans);
+  text-decoration: underline;
+  padding: 0;
+}
+
+.auth-link:hover { opacity: 0.8; }
+
+.auth-offline-note {
+  margin-top: 16px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--border);
+}
+
+/* ── Mobile Responsive Design ─────────────────────────── */
+@media (max-width: 768px) {
+  /* Dashboard layout - stack vertically */
+  .dashboard-layout {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  /* Right sidebar - move to top */
+  .right-sidebar {
+    width: 100%;
+    height: auto;
+    position: relative;
+    top: auto;
+    border-left: none;
+    border-bottom: 1px solid var(--border);
+    padding: 16px 12px;
+    overflow: visible;
+    margin-bottom: 12px;
+  }
+
+  .right-sidebar .rs-card {
+    margin-bottom: 8px;
+  }
+
+  /* Sidebar stays on LEFT, but text hidden and narrower */
+  .sidebar {
+    width: 60px;
+    padding: 12px 6px;
+    border-right: 1px solid var(--border);
+    height: 100svh;
+    position: sticky;
+    top: 0;
+    flex-direction: column;
+    gap: 2px;
+    z-index: auto;
+  }
+
+  .sidebar-logo {
+    display: none;
+  }
+
+  .sidebar-nav {
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+  }
+
+  .sidebar-link {
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 4px;
+    font-size: 9px;
+    width: 100%;
+    text-align: center;
+    min-width: 0;
+  }
+
+  .sidebar-link svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  /* Hide text labels on mobile sidebar */
+  .sidebar-link > span:last-child {
+    display: none;
+  }
+
+  .sidebar-parent {
+    display: none;
+  }
+
+  .sidebar-children {
+    display: none;
+  }
+
+  /* Main app area - no bottom margin needed */
+  .app-main {
+    overflow-y: auto;
+  }
+
+  /* Page padding - reduce on mobile */
+  .page {
+    padding: 16px 12px;
+    max-width: 100%;
+  }
+
+  /* Stats row - stack on mobile */
+  .stats-row {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .stat-card {
+    flex: 1;
+  }
+
+  /* Heatmap - make scrollable */
+  .heatmap-grid {
+    grid-template-columns: repeat(26, 1fr);
+  }
+
+  /* Modal - full screen on mobile */
+  .modal-backdrop {
+    padding: 12px;
+  }
+
+  .modal {
+    max-width: 100%;
+    border-radius: 12px;
+    max-height: 85svh;
+  }
+
+  /* Forms - full width on mobile */
+  .field,
+  .form-label input,
+  .form-label textarea,
+  .form-label select {
+    width: 100%;
+  }
+
+  /* Buttons */
+  .btn {
+    font-size: 14px;
+    padding: 10px 12px;
+  }
+
+  .btn-sm {
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+
+  /* Habit grid - 2 columns on mobile */
+  .habit-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  /* Day picker - smaller on mobile */
+  .day-picker {
+    gap: 4px;
+  }
+
+  .day-btn {
+    width: 32px;
+    height: 32px;
+    font-size: 11px;
+  }
+
+  /* Workout timer - adjust on mobile */
+  .workout-timer {
+    font-size: 12px;
+    padding: 8px 12px;
+  }
+
+  /* Workout card grid */
+  .workout-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Tasks Eisenhower Matrix - stack on mobile */
+  .task-matrix {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  /* Active workout - full width */
+  .active-workout {
+    border-radius: 0;
+  }
+
+  .aw-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .aw-exercises {
+    padding: 12px;
+  }
+
+  .exercise-item {
+    flex-direction: column;
+  }
+
+  /* Right sidebar sections - make them compact */
+  .rs-section {
+    margin-bottom: 12px;
+  }
+
+  .rs-label {
+    font-size: 12px;
+  }
+
+  .rs-big {
+    font-size: 20px;
+  }
+
+  /* Habit detail - stack on mobile */
+  .habit-detail-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* Settings - full width */
+  .settings-section {
+    margin-bottom: 16px;
+  }
+
+  /* Cards - reduce padding on mobile */
+  .card {
+    padding: 14px;
+  }
+
+  .card-title {
+    font-size: 13px;
+    margin-bottom: 12px;
+  }
+
+  /* General typography adjustments */
+  h1 {
+    font-size: 20px;
+  }
+
+  h2 {
+    font-size: 14px;
+  }
+
+  /* Page header */
+  .page-header {
+    margin-bottom: 12px;
+  }
+
+  /* Quota bar */
+  .quota-bar-track {
+    height: 6px;
+    border-radius: 3px;
+  }
+
+  .quota-bar-fill {
+    height: 100%;
+  }
+
+  /* Item row */
+  .item-row {
+    padding: 10px 0;
+  }
+
+  .item-name {
+    font-size: 13px;
+  }
+
+  .item-sub {
+    font-size: 11px;
+  }
+
+  /* Habit progress */
+  .habit-progress {
+    padding: 10px 0;
+  }
+
+  .habit-dot {
+    width: 8px;
+    height: 8px;
+  }
+
+  .habit-dots {
+    gap: 2px;
+  }
+}
+
+/* Extra small screens (phones in portrait) */
+@media (max-width: 480px) {
+  .page {
+    padding: 16px 8px;
+  }
+
+  .habit-grid {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .day-btn {
+    width: 28px;
+    height: 28px;
+    font-size: 10px;
+  }
+
+  .stat-card {
+    padding: 12px;
+  }
+
+  .stat-value {
+    font-size: 24px;
+  }
+
+  .auth-card {
+    padding: 24px 16px;
+  }
+
+  .heatmap-grid {
+    grid-template-columns: repeat(13, 1fr);
+    gap: 2px;
+  }
+
+  h1 {
+    font-size: 18px;
+  }
+
+  /* Modal adjustments */
+  .modal-box {
+    margin: 0;
+    max-height: 90svh;
+  }
+
+  /* Form elements */
+  .form-stack {
+    gap: 12px;
+  }
+
+  .form-label {
+    margin-bottom: 0;
+  }
 }
