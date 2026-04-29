@@ -66,29 +66,7 @@ export default function RightSidebar({ onDataChange }: Props) {
   return (
     <aside className="right-sidebar">
 
-      {/* Active / start workout */}
-      {activeExists
-        ? (
-          <div className="rs-card active-banner" onClick={() => setShowActive(true)}>
-            <p className="rs-label" style={{ color: '#22c55e' }}>🏋️ Workout in progress</p>
-            <p className="rs-sub">Tap to continue</p>
-          </div>
-        )
-        : (
-          <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', marginBottom: 4 }}
-            onClick={() => setShowStart(true)}>
-            🏋️ Start workout
-          </button>
-        )
-      }
-
-      {/* Time stats */}
-      <div className="rs-card">
-        <p className="rs-label">This week</p>
-        <p className="rs-stat">{formatDuration(weeklyTime)}</p>
-        <p className="rs-label" style={{ marginTop: 8 }}>This month</p>
-        <p className="rs-stat">{formatDuration(monthlyTime)}</p>
-      </div>
+      
 
       {/* Today habits */}
       <div className="rs-card">
@@ -129,6 +107,30 @@ export default function RightSidebar({ onDataChange }: Props) {
           </div>
         </div>
       )}
+
+      {/* Active / start workout */}
+      {activeExists
+        ? (
+          <div className="rs-card active-banner" onClick={() => setShowActive(true)}>
+            <p className="rs-label" style={{ color: '#22c55e' }}>🏋️ Workout in progress</p>
+            <p className="rs-sub">Tap to continue</p>
+          </div>
+        )
+        : (
+          <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', marginBottom: 4 }}
+            onClick={() => setShowStart(true)}>
+            🏋️ Start workout
+          </button>
+        )
+      }
+
+      {/* Time stats */}
+      {/* <div className="rs-card">
+        <p className="rs-label">This week</p>
+        <p className="rs-stat">{formatDuration(weeklyTime)}</p>
+        <p className="rs-label" style={{ marginTop: 8 }}>This month</p>
+        <p className="rs-stat">{formatDuration(monthlyTime)}</p>
+      </div> */}
 
       {/* Weekly goal mini */}
       <div className="rs-card">

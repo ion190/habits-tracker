@@ -1,6 +1,12 @@
 // src/db/database.ts
 import Dexie, { type Table } from 'dexie'
 
+export interface HabitQuota {
+  type: 'quantity' | 'time'
+  target: number
+  unit: string
+}
+
 export interface Habit {
   id: string
   name: string
@@ -9,6 +15,7 @@ export interface Habit {
   frequency: 'daily' | 'weekly' | 'custom'
   targetDays: number[]
   tags: string[]
+  quota?: HabitQuota
   createdAt: string
   archivedAt?: string
 }
@@ -18,6 +25,7 @@ export interface HabitLog {
   habitId: string
   completedAt: string
   note?: string
+  value?: number
 }
 
 export interface Task {
@@ -31,6 +39,7 @@ export interface Task {
   tags: string[]
   urgency: 'low' | 'medium' | 'high'
   importance: 'low' | 'medium' | 'high'
+  archivedAt?: string
 }
 
 export interface Exercise {
@@ -129,10 +138,10 @@ class RitualsDB extends Dexie {
 
   constructor() {
     super('RitualsDB')
-    this.version(4).stores({
+    this.version(6).stores({
       habits:            '&id, name, frequency, archivedAt',
       habitLogs:         '&id, habitId, completedAt',
-      tasks:             '&id, dueDate, notificationTime, completedAt, urgency, importance',
+      tasks:             '&id, dueDate, notificationTime, completedAt, urgency, importance, archivedAt',
       exercises:         '&id, name, category',
       workoutPlans:      '&id, name, createdAt',
       completedWorkouts: '&id, workoutPlanId, startedAt',

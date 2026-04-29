@@ -21,61 +21,93 @@ export default function Sidebar() {
   }, [])
 
   return (
-    <aside className="sidebar">
-      <div className="sidebar-logo">
-        <svg width="28" height="28" viewBox="0 0 28 28">
-          <rect width="28" height="28" rx="8" fill="var(--accent)" />
-          <path d="M9 14h10M14 9v10" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
-        </svg>
-        <span>Journal</span>
-      </div>
-
-      <nav className="sidebar-nav">
-        {/* <p className="sidebar-section">Menu</p> */}
-
-        <NavLink to="/dashboard" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
-          <IconGrid /> Dashboard
-        </NavLink>
-
-        <div>
-          <div className="sidebar-link sidebar-parent" onClick={() => setHabitsOpen(o => !o)}>
-            <span style={{ display:'flex', alignItems:'center', gap:10 }}>
-              <IconCheck /> Habits
-            </span>
-            <span style={{ fontSize:10, opacity:0.5 }}>{habitsOpen ? '▲' : '▼'}</span>
-          </div>
-
-          {habitsOpen && (
-            <div className="sidebar-children">
-              <NavLink to="/habits" end className={({ isActive }) => `sidebar-link sidebar-child ${isActive ? 'active' : ''}`}>
-                All habits
-              </NavLink>
-              {habits.map(h => (
-                <NavLink key={h.id} to={`/habits/${h.id}`} className={({ isActive }) => `sidebar-link sidebar-child ${isActive ? 'active' : ''}`}>
-                  <span className="habit-dot-sm" style={{ background: h.color }} />
-                  {h.name}
-                </NavLink>
-              ))}
-            </div>
-          )}
+    <>
+      {/* Desktop sidebar */}
+      <aside className="sidebar">
+        <div className="sidebar-logo">
+          <svg width="28" height="28" viewBox="0 0 28 28">
+            <rect width="28" height="28" rx="8" fill="var(--accent)" />
+            <path d="M9 14h10M14 9v10" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
+          </svg>
+          <span>Journal</span>
         </div>
 
-        <NavLink to="/tasks" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
-          <IconChecklist /> Tasks
-        </NavLink>
+        <nav className="sidebar-nav">
+          <NavLink to="/dashboard" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+            <IconGrid /> Dashboard
+          </NavLink>
 
-        <NavLink to="/workouts" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
-          <IconDumbbell /> Workouts
-        </NavLink>
+          <div>
+            <div className="sidebar-link sidebar-parent">
+              <NavLink
+                to="/habits"
+                className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
+                style={{ flex: 1, padding: 0, background: 'none' }}
+              >
+                <IconCheck /> Habits
+              </NavLink>
+              <span
+                style={{ fontSize:10, opacity:0.5, cursor:'pointer', padding:'4px 8px', borderRadius:4 }}
+                onClick={() => setHabitsOpen(o => !o)}
+              >
+                {habitsOpen ? '▲' : '▼'}
+              </span>
+            </div>
 
-        <NavLink to="/settings" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
-          <IconSettings /> Settings
+            {habitsOpen && (
+              <div className="sidebar-children">
+                {habits.map(h => (
+                  <NavLink key={h.id} to={`/habits/${h.id}`} className={({ isActive }) => `sidebar-link sidebar-child ${isActive ? 'active' : ''}`}>
+                    <span className="habit-dot-sm" style={{ background: h.color }} />
+                    {h.name}
+                  </NavLink>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <NavLink to="/tasks" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+            <IconChecklist /> Tasks
+          </NavLink>
+
+          <NavLink to="/workouts" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+            <IconDumbbell /> Workouts
+          </NavLink>
+
+          <NavLink to="/settings" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+            <IconSettings /> Settings
+          </NavLink>
+        </nav>
+
+        <div style={{ marginTop:'auto', paddingTop:12, borderTop:'1px solid var(--border)' }}>
+          <SyncBadge />
+        </div>
+      </aside>
+
+      {/* Mobile bottom nav */}
+      <nav className="bottom-nav">
+        <NavLink to="/dashboard" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`}>
+          <IconGrid />
+          <span>Dashboard</span>
+        </NavLink>
+        <NavLink to="/habits" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`}>
+          <IconCheck />
+          <span>Habits</span>
+        </NavLink>
+        <NavLink to="/tasks" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`}>
+          <IconChecklist />
+          <span>Tasks</span>
+        </NavLink>
+        <NavLink to="/workouts" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`}>
+          <IconDumbbell />
+          <span>Workouts</span>
+        </NavLink>
+        <NavLink to="/settings" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`}>
+          <IconSettings />
+          <span>Settings</span>
         </NavLink>
       </nav>
-
-      <div style={{ marginTop:'auto', paddingTop:12, borderTop:'1px solid var(--border)' }}>
-        <SyncBadge />
-      </div>
-    </aside>
+    </>
   )
 }
+

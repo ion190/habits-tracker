@@ -5,9 +5,12 @@ import type { Task } from '../db/database'
 import { formatDateOnlyGMT3 } from '../utils'
 import Modal from '../components/Modal'
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
+import TaskHeatmap from '../components/TaskHeatmap'
 
 export default function Tasks() {
   const [tasks, setTasks] = useState<Task[]>([])
+  const [archivedTasks, setArchivedTasks] = useState<Task[]>([])
+  const [showArchived, setShowArchived] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -23,15 +26,22 @@ export default function Tasks() {
 
   // Load tasks
   async function load() {
-    const data = await db.tasks.filter(t => !t.completedAt).toArray()
-    setTasks(data.sort((a, b) => {
-      // Sort by importance first (desc), then by urgency (desc)
-      const impOrder = { high: 3, medium: 2, low: 1 }
-      if (impOrder[b.importance] !== impOrder[a.importance]) {
-        return impOrder[b.importance] - impOrder[a.importance]
-      }
-      return impOrder[b.urgency] - impOrder[a.urgency]
-    }))
+    const all = await db.tasks.toArray()
+    const active = all
+      .filter(t => !t.archivedAt && !t.completedAt)
+      .sort((a, b) => {
+        const impOrder = { high: 3, medium: 2, low: 1 }
+        if (impOrder[b.importance] !== impOrder[a.importance]) {
+          return impOrder[b.importance] - impOrder[a.importance]
+        }
+        return impOrder[b.urgency] - impOrder[a.urgency]
+      })
+    const archived = all
+      .filter(t => t.archivedAt && !t.completedAt)
+      .sort((a, b) => new Date(b.archivedAt!).getTime() - new Date(a.archivedAt!).getTime())
+
+    setTasks(active)
+    setArchivedTasks(archived)
   }
 
   useEffect(() => { load() }, [])
@@ -81,11 +91,12 @@ export default function Tasks() {
       description: description || undefined,
       dueDate: dueDate || undefined,
       notificationTime: undefined,
-      completedAt: undefined,
+      completedAt: editingTask?.completedAt ?? undefined,
       createdAt: editingTask?.createdAt ?? new Date().toISOString(),
       tags,
       urgency,
       importance,
+      archivedAt: editingTask?.archivedAt ?? undefined,
     }
 
     await sync.put('tasks', task as unknown as Record<string, unknown>)
@@ -98,6 +109,20 @@ export default function Tasks() {
       ...task,
       completedAt: new Date().toISOString(),
     } as unknown as Record<string, unknown>)
+    load()
+  }
+
+  async function archiveTask(task: Task) {
+    await sync.put('tasks', {
+      ...task,
+      archivedAt: new Date().toISOString(),
+    } as unknown as Record<string, unknown>)
+    load()
+  }
+
+  async function unarchiveTask(task: Task) {
+    const { archivedAt, ...rest } = task
+    await sync.put('tasks', rest as unknown as Record<string, unknown>)
     load()
   }
 
@@ -195,11 +220,11 @@ export default function Tasks() {
                     ✎
                   </button>
                   <button
-                    className="btn btn-sm btn-ghost danger"
-                    onClick={() => confirmDelete(task)}
-                    title="Delete"
+                    className="btn btn-sm btn-ghost"
+                    onClick={() => archiveTask(task)}
+                    title="Archive"
                   >
-                    ✕
+                    🗃
                   </button>
                 </div>
               </div>
@@ -210,12 +235,20 @@ export default function Tasks() {
     </div>
   )
 
+  const allTasksForHeatmap = [...tasks, ...archivedTasks]
+
   return (
-    <div style={{ padding: 20 }}>
+    <div className="page">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <h1 style={{ margin: 0 }}>Tasks</h1>
         <button className="btn btn-primary" onClick={openNewTask}>New Task</button>
       </div>
+
+      {/* Task Heatmap */}
+      <section className="card heatmap-card">
+        <h2 className="card-title">Task completion — last year</h2>
+        <TaskHeatmap tasks={allTasksForHeatmap} />
+      </section>
 
       {/* Eisenhower Matrix */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
@@ -224,6 +257,70 @@ export default function Tasks() {
         <Quadrant title="🟡 Delegate (Urgent, Not Important)" tasks={urgent_not_important} color="info" />
         <Quadrant title="⚪ Eliminate (Neither)" tasks={not_urgent_not_important} color="ghost" />
       </div>
+
+      {/* Show archived toggle */}
+      {archivedTasks.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <button
+            className="btn btn-secondary"
+            onClick={() => setShowArchived(s => !s)}
+          >
+            {showArchived ? '▲ Hide archived' : `▼ Show archived (${archivedTasks.length})`}
+          </button>
+        </div>
+      )}
+
+      {/* Archived tasks section */}
+      {showArchived && archivedTasks.length > 0 && (
+        <section className="card" style={{ opacity: 0.7 }}>
+          <h2 className="card-title">Archived tasks</h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {archivedTasks.map(task => (
+              <div
+                key={task.id}
+                style={{
+                  background: 'var(--card-bg)',
+                  border: '1px solid var(--card-border)',
+                  borderRadius: 6,
+                  padding: 10,
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ margin: '0 0 4px 0', fontSize: 13, fontWeight: 500 }}>{task.title}</p>
+                    {task.description && (
+                      <p style={{ margin: '0 0 6px 0', fontSize: 11, color: 'var(--text-dim)' }}>
+                        {task.description}
+                      </p>
+                    )}
+                    {task.dueDate && (
+                      <p style={{ margin: '4px 0 0 0', fontSize: 10, color: 'var(--text-dim)' }}>
+                        Due: {formatDateOnlyGMT3(task.dueDate)}
+                      </p>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      className="btn btn-sm btn-ghost"
+                      onClick={() => unarchiveTask(task)}
+                      title="Unarchive"
+                    >
+                      ↩
+                    </button>
+                    <button
+                      className="btn btn-sm btn-ghost danger"
+                      onClick={() => confirmDelete(task)}
+                      title="Delete permanently"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Task Form Modal */}
       {showModal && (
@@ -344,7 +441,7 @@ export default function Tasks() {
       {showDeleteConfirm && deleteTarget && (
         <ConfirmDeleteModal
           title="Delete Task"
-          message="Are you sure you want to delete this task?"
+          message="Are you sure you want to permanently delete this task?"
           itemName={deleteTarget.title}
           onConfirm={deleteTask}
           onCancel={() => setShowDeleteConfirm(false)}
@@ -354,3 +451,4 @@ export default function Tasks() {
     </div>
   )
 }
+

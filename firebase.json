@@ -6,13 +6,8 @@
       "**/.*",
       "**/node_modules/**"
     ],
-    "redirects": [
-      {
-        "source": "/",
-        "destination": "https://habits-tracker-28f65.web.app/habits-tracker/",
-        "type": 301
-      }
-    ],
+    "redirects": [],
+
     "rewrites": [
       {
         "source": "**",

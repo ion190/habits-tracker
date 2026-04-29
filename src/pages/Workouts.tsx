@@ -1,7 +1,10 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
+
 import { db, generateId } from '../db/database'
 import { sync } from '../db/sync'
 import type { Exercise, WorkoutPlan, PlanExercise, CompletedWorkout } from '../db/database'
+import type { CSSProperties } from 'react'
+
 import Modal from '../components/Modal'
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
 import ExerciseDetailModal from '../components/ExerciseDetailModal'
@@ -74,24 +77,238 @@ function WorkoutDetailModal({ workout, exercises, onClose }: {
   )
 }
 
-// ── Workout heatmap ───────────────────────────────────────
+/* Unified workout heatmap helpers moved inline */
 
 function WorkoutHeatmap({ workouts }: { workouts: CompletedWorkout[] }) {
-  const map = new Map<string, number>()
-  for (const w of workouts) { const d = toDateKey(w.startedAt); map.set(d, (map.get(d) ?? 0) + 1) }
-  const days = Array.from({ length: 364 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (363 - i)); return toDateKey(d.toISOString()) })
-  const firstDayOfWeek = new Date(days[0]).getDay() // 0=Sun, 1=Mon...6=Sat
-  const pad = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1 // Convert to Monday-first: 0=Mon, 6=Sun
-  const cls = (n: number) => n === 0 ? 'hm-0' : n === 1 ? 'hm-1' : n <= 3 ? 'hm-3' : 'hm-4'
+  const [hovered, setHovered] = useState<any>(null)
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
+
+  // Inline buildDayMap
+  const dayMap = useMemo(() => {
+    const map = new Map<string, any>()
+    for (let i = 0; i < 364; i++) {
+      const d = new Date()
+      d.setDate(d.getDate() - (363 - i))
+      const key = toDateKey(d.toISOString())
+      map.set(key, { date: key, count: 0, titles: [] })
+    }
+    for (const workout of workouts) {
+      const key = toDateKey(workout.startedAt)
+      const entry = map.get(key)
+      if (entry) {
+        entry.count++
+        entry.titles.push(workout.workoutPlanName)
+      }
+    }
+    return map
+  }, [workouts])
+
+  const days = useMemo(() => {
+    const arr: string[] = []
+    for (let i = 0; i < 364; i++) {
+      const d = new Date()
+      d.setDate(d.getDate() - (363 - i))
+      arr.push(toDateKey(d.toISOString()))
+    }
+    return arr
+  }, [])
+
+  const firstDayOfWeek = new Date(days[0]).getDay()
+  const pad = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1
+
+const totalCols = Math.ceil((pad + days.length) / 7)
+
+  // Inline monthLabels for scrolling grid - col based on grid position
+  const labels = useMemo(() => {
+  const labelArr: any[] = []
+  let currentMonth = -1
+  days.forEach((d, i) => {
+    const date = new Date(d + 'T00:00:00')
+    const m = date.getMonth()
+    if (m !== currentMonth) {
+      currentMonth = m
+      const absPos = pad + i
+      // Snap to next column if month starts past Monday of that week
+      const col = (absPos % 7 === 0) ? Math.floor(absPos / 7) : Math.floor(absPos / 7) + 1
+      labelArr.push({ month: date.toLocaleString('en-US', { month: 'short' }), col })
+    }
+  })
+  return labelArr
+}, [days, pad])
+
+  const completedWorkouts = workouts.length
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    setMousePos({ x: e.clientX, y: e.clientY })
+  }, [])
+
+  // handleTouch removed
+
+  function getCls(count: number): string {
+    if (count === 0) return 'hm-0'
+    if (count === 1) return 'hm-4'
+      // return 'hm-1'
+    // if (count <= 3) return 'hm-3'
+    
+  }
+
+
+
   return (
-    <div className="heatmap-wrap" style={{ marginTop: 16 }}>
-      <div className="heatmap-grid">
-        {Array(pad).fill(null).map((_, i) => <div key={`p${i}`} className="hm-cell hm-0" />)}
-        {days.map(d => <div key={d} className={`hm-cell ${cls(map.get(d) ?? 0)}`} title={`${d}: ${map.get(d) ?? 0} workout(s)`} />)}
+    <div className="unified-heatmap" style={{ marginTop: 16 }} onMouseMove={handleMouseMove}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <span style={{ fontSize: 12, color: 'var(--text)' }}>
+          {completedWorkouts} completed workouts
+        </span>
       </div>
+
+      
+<div className="hm-scroll">
+        {/* Single grid for both month labels + cells */}
+<div
+  className="hm-grid"
+  style={{
+    gridTemplateColumns: `repeat(${totalCols}, 14px)`,
+    gridTemplateRows: 'auto repeat(7, 14px)',
+    gridAutoFlow: 'unset',
+  }}
+>
+  {/* Row 0: month labels */}
+  {Array.from({ length: totalCols }).map((_, col) => {
+    const label = labels.find((l) => l.col === col)
+    return (
+      <div
+        key={`m${col}`}
+        className="hm-month"
+        style={{
+          gridRow: 1,
+          gridColumn: col + 1,
+          textAlign: 'left',
+          whiteSpace: 'nowrap',
+          fontSize: 11,
+          color: 'var(--text-muted)',
+        }}
+      >
+        {label?.month ?? ''}
+      </div>
+    )
+  })}
+
+  {/* Padding cells */}
+  {Array(pad).fill(null).map((_, i) => (
+  <div
+    key={`p${i}`}
+    className="hm-cell hm-empty"
+    style={{ gridRow: i + 2, gridColumn: 1 }}
+  />
+))}
+
+  {/* Day cells */}
+  {days.map((d, i) => {
+    const day = dayMap.get(d)!
+    const col = Math.floor((pad + i) / 7) + 1
+    const row = ((pad + i) % 7) + 2  // +2 because row 1 is month labels
+    return (
+      <div
+        key={d}
+        className={`hm-cell ${getCls(day.count)}`}
+        style={{ borderRadius: 3, cursor: 'pointer', gridRow: row, gridColumn: col }}
+        onMouseEnter={() => setHovered(day)}
+        onMouseLeave={() => setHovered(null)}
+        role="button"
+        tabIndex={0}
+        aria-label={`${d}: ${day.count} workouts`}
+      />
+    )
+  })}
+</div>
+</div>
+
+      {/* Legend */}
+      <div className="hm-legend-row">
+        <div className="hm-legend-item">
+          <div className="hm-legend-dot hm-0" />
+          <span>None</span>
+        </div>
+        <div className="hm-legend-item">
+          <div className="hm-legend-dot hm-4" />
+          <span>1</span>
+        </div>
+        {/* <div className="hm-legend-item">
+          <div className="hm-legend-dot hm-3" />
+          <span>2-3</span>
+        </div>
+        <div className="hm-legend-item">
+          <div className="hm-legend-dot hm-4" />
+          <span>4+</span>
+        </div> */}
+      </div>
+
+      {/* Hover tooltip */}
+      {hovered && (
+        <Tooltip day={hovered} x={mousePos.x} y={mousePos.y} />
+      )}
     </div>
   )
 }
+
+function Tooltip({ 
+  day, 
+  x, 
+  y 
+}: {
+  day: DayData
+  x: number
+  y: number
+}) {
+  const style: CSSProperties = {
+    position: 'fixed',
+    left: x + 12,
+    top: y - 12,
+    zIndex: 9999,
+    pointerEvents: 'none',
+  }
+
+  const dateStr = new Date(day.date + 'T00:00:00').toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  })
+
+  return (
+    <div className="hm-tooltip" style={style}>
+      <p className="hm-tooltip-date">{dateStr}</p>
+      {day.count > 0 ? (
+        <>
+          <p className="hm-tooltip-label">Workouts completed ({day.count})</p>
+          <div className="hm-tooltip-habits">
+            {day.titles.slice(0, 5).map((title, i) => (
+              <span key={i} className="hm-tooltip-tag" style={{ 
+                background: 'rgba(34, 197, 94, 0.12)', 
+                borderColor: 'rgba(34, 197, 94, 0.35)', 
+                color: '#22c55e' 
+              }}>
+                {title}
+              </span>
+            ))}
+            {day.titles.length > 5 && (
+              <span className="hm-tooltip-tag" style={{ background: 'var(--border)', color: 'var(--text)' }}>
+                +{day.titles.length - 5} more
+              </span>
+            )}
+          </div>
+        </>
+      ) : (
+        <p className="hm-tooltip-empty">No workouts</p>
+      )}
+    </div>
+  )
+}
+
+
+
+
 
 // ── Exercise image upload ─────────────────────────────────
 

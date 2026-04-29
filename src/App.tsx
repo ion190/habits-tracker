@@ -2,6 +2,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './components/AuthContext'
 import Sidebar from './components/Sidebar'
+import RightSidebar from './components/RightSidebar'
 import Dashboard from './pages/Dashboard'
 import Habits from './pages/Habits'
 import HabitDetail from './pages/HabitDetail'
@@ -9,6 +10,15 @@ import Tasks from './pages/Tasks'
 import Workouts from './pages/Workouts'
 import Settings from './pages/Settings'
 import AuthPage from './pages/AuthPage'
+
+function DashboardPage() {
+  return (
+    <div className="dashboard-layout">
+      <Dashboard />
+      <RightSidebar />
+    </div>
+  )
+}
 
 function AppShell() {
   const { user, loading } = useAuth()
@@ -31,7 +41,7 @@ function AppShell() {
       <main className="app-main">
         <Routes>
           <Route path="/"                     element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard"            element={<Dashboard />} />
+          <Route path="/dashboard"            element={<DashboardPage />} />
           <Route path="/habits"               element={<Habits />} />
           <Route path="/habits/:habitId"      element={<HabitDetail />} />
           <Route path="/tasks"                element={<Tasks />} />
@@ -46,7 +56,7 @@ function AppShell() {
 
 export default function App() {
   return (
-    <BrowserRouter basename="/habits-tracker">
+    <BrowserRouter>
       <AuthProvider>
         <AppShell />
       </AuthProvider>
