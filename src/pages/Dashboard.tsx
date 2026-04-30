@@ -1,10 +1,15 @@
 import { useEffect, useState, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { db, generateId } from '../db/database'
 import type { Habit, HabitLog, CompletedWorkout, Task } from '../db/database'
 import { formatDuration, toDateKey, startOfWeek } from '../utils'
 import { sync } from '../db/sync'
 import UnifiedHeatmap from '../components/UnifiedHeatmap'
 import HabitValueModal from '../components/HabitValueModal'
+import StartWorkoutModal from '../components/StartWorkoutModal'
+import StartWorkSessionModal from '../components/StartWorkSessionModal'
+import ModalPortal from '../components/ModalPortal'
+import type { CompletedWorkSession, WorkSessionCategory } from '../db/database'
 
 function CompletionCircle({ pct }: { pct: number }) {
   const r = 16; const circ = 2 * Math.PI * r
@@ -37,7 +42,7 @@ function WorkoutRow({ w }: { w: CompletedWorkout }) {
           </div>
           <p className="item-sub">
             {new Date(w.startedAt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-            {' \u00b7 '}{w.exercises.length} exercises \u00b7 {doneSets}/{totalSets} sets
+            {' \u00b7 '}{w.exercises.length} exercises {' \u00b7 '} {doneSets}/{totalSets} sets
           </p>
         </div>
         <CompletionCircle pct={pct} />
@@ -64,6 +69,7 @@ function WorkoutRow({ w }: { w: CompletedWorkout }) {
 }
 
 export default function Dashboard() {
+  const navigate = useNavigate()   // ← was missing
   const [habits, setHabits] = useState<Habit[]>([])
   const [logs, setLogs] = useState<HabitLog[]>([])
   const [workouts, setWorkouts] = useState<CompletedWorkout[]>([])
@@ -73,6 +79,12 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [currentTime, setCurrentTime] = useState(new Date())
   const [valueModalHabit, setValueModalHabit] = useState<Habit | null>(null)
+  const [showStartWorkout, setShowStartWorkout] = useState(false)
+  const [showStart, setShowStart] = useState(false)
+  const [showStartSession, setShowStartSession] = useState(false)
+  const [workSessions, setWorkSessions] = useState<CompletedWorkSession[]>([])
+  const [workSessionCategories, setWorkSessionCategories] = useState<WorkSessionCategory[]>([])
+  const [activeWorkSession, setActiveWorkSession] = useState<any>(null)
 
   const weeklyTarget = parseInt(localStorage.getItem('weeklyWorkoutTarget') ?? '3')
 
@@ -81,16 +93,20 @@ export default function Dashboard() {
     const previousWeekStart = new Date(weekStart)
     previousWeekStart.setDate(previousWeekStart.getDate() - 7)
 
-    const [h, l, w, t] = await Promise.all([
+    const [h, l, w, t, ws, wsc] = await Promise.all([
       db.habits.filter((h) => !h.archivedAt).toArray(),
       db.habitLogs.toArray(),
       db.completedWorkouts.orderBy('startedAt').reverse().toArray(),
       db.tasks.filter((t) => !t.archivedAt).toArray(),
+      db.completedWorkSessions.where('startedAt').aboveOrEqual(startOfWeek().toISOString()).toArray(),
+      db.workSessionCategories.toArray(),
     ])
     setHabits(h)
     setLogs(l)
     setAllWorkouts(w)
     setTasks(t)
+    setWorkSessions(ws)
+    setWorkSessionCategories(wsc)
 
     const thisWeekWorkouts = w.filter((x) => new Date(x.startedAt) >= weekStart)
 
@@ -214,7 +230,7 @@ export default function Dashboard() {
       <section className="card">
         <h2 className="card-title">Weekly workout goal: {weekWorkouts.length}/{weeklyTarget}</h2>
         <div className="quota-bar-track">
-          <div
+        <div
             className="quota-bar-fill"
             style={{
               width: `${Math.min(100, Math.round((weekWorkouts.length / weeklyTarget) * 100))}%`,
@@ -225,7 +241,7 @@ export default function Dashboard() {
       </section>
 
       <section className="card habit-quick-card">
-        <h2 className="card-title">Today&apos;s habits</h2>
+        <h2 className="card-title">Today's habits</h2>
         {habits.length === 0 ? (
           <p className="empty-hint">No habits yet.</p>
         ) : (
@@ -259,10 +275,35 @@ export default function Dashboard() {
         />
       )}
 
+      {showStartWorkout && (
+        <ModalPortal title="Start workout" onClose={() => setShowStartWorkout(false)}>
+          <StartWorkoutModal 
+            onClose={() => setShowStartWorkout(false)} 
+            onStarted={() => { setShowStartWorkout(false); navigate('/workouts', { replace: true }) }} 
+          />
+        </ModalPortal>
+      )}
+
       <section className="card heatmap-card">
         <h2 className="card-title">Activity: last year</h2>
-        {logs.length === 0 && allWorkouts.length === 0 ? (
-          <p className="empty-hint">No activity yet. Start logging habits and workouts!</p>
+{logs.length === 0 && allWorkouts.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '24px 16px' }}>
+            <p className="empty-hint" style={{ marginBottom: 16 }}>No activity yet. Start logging habits and workouts!</p>
+            <button 
+              className="btn btn-secondary" 
+              style={{ fontSize: 13 }}
+              onClick={async () => {
+                await import('../utils/sampleData').then(m => m.populateSampleData())
+                load()
+              }}
+              title="Adds historical data for heatmap demos"
+            >
+              💾 Load Demo Data
+            </button>
+            <p style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 12 }}>
+              Adds habits, logs, tasks across 1 year for testing heatmaps
+            </p>
+          </div>
         ) : (
           <UnifiedHeatmap habits={habits} logs={logs} workouts={allWorkouts} />
         )}

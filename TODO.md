@@ -1,22 +1,13 @@
-# Habits Tracker - Heatmap Styling TODO
+# Fix Work Session Start Button + Add to RightSidebar/Dashboard
 
-## Approved Plan Steps
-✅ **Step 1**: Create TODO.md with breakdown (done)
+## Steps:
+- [x] 1. Update src/pages/WorkSessions.tsx: Add showStartModal state, change "Start session" button to open StartWorkSessionModal instead of ActiveWorkSession directly. Wire onStarted to set localStorage + showActive. Remove localStorage hack modal. Add 'workSessionStatusChange' listener.
 
-✅ **Step 2**: Read/add any missing CSS for unified heatmap to src/index.css if needed (existing styles sufficient)
+Current: Step 2 Dashboard.tsx.
+- [ ] 2. Update src/pages/Dashboard.tsx: Use existing showStartSession state + add "Start Work Session" button (stats section or header). Add active banner if localStorage has active session. Add event listener.
+- [ ] 3. Update src/components/RightSidebar.tsx: Add activeWorkSession check (mirror workout logic). Show "🧠 Active work session" banner or "🧠 Start work session" button. Trigger modal via localStorage flag.
+- [ ] 4. Minor: App.tsx - Add global listener in DashboardPage for consistent active state (optional).
+- [ ] 5. Test: Run dev server, verify buttons open modal → start session → timer runs → saves to DB. Check RightSidebar/Dashboard banners.
+- [ ] 6. attempt_completion
 
-✅ **Step 3**: Refactor WorkoutHeatmap in src/pages/Workouts.tsx:
-   - Add dayMap, month labels, hover state
-   - Change linear render to .hm-grid structure (52 weeks x 7 days)
-   - Add summary count, legend, tooltip
-
-✅ **Step 4**: Test changes (npm run dev running on localhost:5175 - heatmap now displays as proper grid with hover/scroll/legend matching TaskHeatmap style)
-
-✅ **Step 5**: Update TODO.md with completion (done)
-
-**Task complete!**
-
-## Notes
-- Match TaskHeatmap/UnifiedHeatmap exactly for consistency
-- Reuse existing .hm-* green classes
-- Responsive grid with scroll
+Current: Starting step 1.

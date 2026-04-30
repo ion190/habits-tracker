@@ -164,6 +164,7 @@ export default function ActiveWorkout({ onFinished, onDiscard }: Props) {
 
     await sync.put('completedWorkouts', cw as unknown as Record<string, unknown>)
     localStorage.removeItem('activeWorkout')
+    window.dispatchEvent(new CustomEvent('workoutStatusChange'))
     setSaving(false)
     onFinished()
   }
@@ -174,6 +175,7 @@ export default function ActiveWorkout({ onFinished, onDiscard }: Props) {
 
   function confirmDiscard() {
     localStorage.removeItem('activeWorkout')
+    window.dispatchEvent(new CustomEvent('workoutStatusChange'))
     setShowDiscardConfirm(false)
     onDiscard()
   }
@@ -214,17 +216,35 @@ export default function ActiveWorkout({ onFinished, onDiscard }: Props) {
                     {ce.name}
                   </p>
                 </div>
-                <div style={{ display: 'flex', gap: 4 }}>
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                  <button 
+                    className="complete-all-btn" 
+                    onClick={() => {
+                      if (!session?.exercises) return
+                      const s = { ...session }
+                      if (s.exercises) {
+                        s.exercises = s.exercises.map((ce, i) =>
+                          i === exIdx ? { ...ce, sets: ce.sets.map(st => ({ ...st, done: true })) } : ce
+                        )
+                      }
+                      persist(s)
+                    }}
+                    title="Complete all sets"
+                  >
+                    ✓ All
+                  </button>
                   <button className="btn btn-ghost icon-btn" onClick={() => moveExercise(exIdx, -1)} disabled={exIdx === 0} title="Move up">↑</button>
                   <button className="btn btn-ghost icon-btn" onClick={() => moveExercise(exIdx, 1)} disabled={exIdx === session.exercises.length - 1} title="Move down">↓</button>
                   <button className="btn btn-ghost danger icon-btn" onClick={() => removeExercise(exIdx)} title="Remove">✕</button>
                 </div>
+
               </div>
 
               {/* Set rows */}
               <table className="aw-sets-table">
                 <thead>
-                  <tr><th>#</th><th>Reps</th><th>kg</th><th>Done</th><th></th></tr>
+                  <tr><th>#</th><th>Reps</th><th className="kg-col">kg</th><th></th><th className="done-col">Done</th><th className="remove-col"></th></tr>
+
                 </thead>
                 <tbody>
                   {ce.sets.map((set, setIdx) => (
@@ -234,11 +254,12 @@ export default function ActiveWorkout({ onFinished, onDiscard }: Props) {
                         <input type="number" className="field field-sm" min={0} value={set.reps}
                           onChange={e => updateSet(exIdx, setIdx, 'reps', +e.target.value)} />
                       </td>
-                      <td>
+                      <td className="kg-col">
                         <input type="number" className="field field-sm" min={0} step={0.5} value={set.weight}
                           onChange={e => updateSet(exIdx, setIdx, 'weight', +e.target.value)} />
                       </td>
-                      <td>
+                      <td></td>
+                      <td className="done-col">
                         <button
                           className={`set-check-btn ${set.done ? 'done' : ''}`}
                           onClick={() => toggleSet(exIdx, setIdx)}
@@ -246,13 +267,14 @@ export default function ActiveWorkout({ onFinished, onDiscard }: Props) {
                           {set.done ? '✓' : '○'}
                         </button>
                       </td>
-                      <td>
+                      <td className="remove-col">
                         <button className="btn btn-ghost danger icon-btn" style={{ padding: '2px 6px', fontSize: 11 }}
                           onClick={() => removeSet(exIdx, setIdx)}>✕</button>
                       </td>
                     </tr>
                   ))}
                 </tbody>
+
               </table>
               <button className="btn btn-ghost" style={{ marginTop: 6, fontSize: 12 }} onClick={() => addSet(exIdx)}>
                 + Add set

@@ -17,6 +17,14 @@ export function IconCheck() {
   )
 }
 
+export function IconX() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 export function IconClock() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -86,6 +94,73 @@ export function IconPlus() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
       <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+export function IconArchive() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      {/* top lid */}
+      <path
+        d="M2 4h12"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+      
+      {/* box */}
+      <rect
+        x="3"
+        y="5"
+        width="10"
+        height="8"
+        rx="1.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
+
+      {/* slot / handle */}
+      <path
+        d="M6.5 8h3"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
+export function IconPause() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="4" y="2" width="2.5" height="12" rx="1.25" fill="currentColor" />
+      <rect x="9.5" y="2" width="2.5" height="12" rx="1.25" fill="currentColor" />
+    </svg>
+  )
+}
+
+export function IconPlay() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="m7 3 6 5-6 5V3Z" fill="currentColor" />
+    </svg>
+  )
+}
+
+export function IconStop() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="3" y="3" width="10" height="10" rx="1" fill="currentColor" />
+    </svg>
+  )
+}
+
+export function IconEdit() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M2 11l3 3 7-7-3-3-7 7Z" fill="currentColor" />
+      <path d="m11 4 3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }

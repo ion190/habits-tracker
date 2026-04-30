@@ -1,17 +1,17 @@
-import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
+import { useEffect, useState, useRef } from 'react'
 
 import { db, generateId } from '../db/database'
 import { sync } from '../db/sync'
+import WorkoutHeatmap from '../components/WorkoutHeatmap'
 import type { Exercise, WorkoutPlan, PlanExercise, CompletedWorkout } from '../db/database'
-import type { CSSProperties } from 'react'
 
 import Modal from '../components/Modal'
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
 import ExerciseDetailModal from '../components/ExerciseDetailModal'
 import StartWorkoutModal from '../components/StartWorkoutModal'
-import ActiveWorkout from '../components/ActiveWorkout'
 import { IconPlus, IconTrash, IconSettings } from '../components/Icons'
-import { formatDuration, startOfWeek, toDateKey } from '../utils'
+import { formatDuration, startOfWeek } from '../utils'
+import ActiveWorkout from '../components/ActiveWorkout'
 
 // ── Completion circle ─────────────────────────────────────
 
@@ -77,234 +77,7 @@ function WorkoutDetailModal({ workout, exercises, onClose }: {
   )
 }
 
-/* Unified workout heatmap helpers moved inline */
 
-function WorkoutHeatmap({ workouts }: { workouts: CompletedWorkout[] }) {
-  const [hovered, setHovered] = useState<any>(null)
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
-
-  // Inline buildDayMap
-  const dayMap = useMemo(() => {
-    const map = new Map<string, any>()
-    for (let i = 0; i < 364; i++) {
-      const d = new Date()
-      d.setDate(d.getDate() - (363 - i))
-      const key = toDateKey(d.toISOString())
-      map.set(key, { date: key, count: 0, titles: [] })
-    }
-    for (const workout of workouts) {
-      const key = toDateKey(workout.startedAt)
-      const entry = map.get(key)
-      if (entry) {
-        entry.count++
-        entry.titles.push(workout.workoutPlanName)
-      }
-    }
-    return map
-  }, [workouts])
-
-  const days = useMemo(() => {
-    const arr: string[] = []
-    for (let i = 0; i < 364; i++) {
-      const d = new Date()
-      d.setDate(d.getDate() - (363 - i))
-      arr.push(toDateKey(d.toISOString()))
-    }
-    return arr
-  }, [])
-
-  const firstDayOfWeek = new Date(days[0]).getDay()
-  const pad = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1
-
-const totalCols = Math.ceil((pad + days.length) / 7)
-
-  // Inline monthLabels for scrolling grid - col based on grid position
-  const labels = useMemo(() => {
-  const labelArr: any[] = []
-  let currentMonth = -1
-  days.forEach((d, i) => {
-    const date = new Date(d + 'T00:00:00')
-    const m = date.getMonth()
-    if (m !== currentMonth) {
-      currentMonth = m
-      const absPos = pad + i
-      // Snap to next column if month starts past Monday of that week
-      const col = (absPos % 7 === 0) ? Math.floor(absPos / 7) : Math.floor(absPos / 7) + 1
-      labelArr.push({ month: date.toLocaleString('en-US', { month: 'short' }), col })
-    }
-  })
-  return labelArr
-}, [days, pad])
-
-  const completedWorkouts = workouts.length
-
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    setMousePos({ x: e.clientX, y: e.clientY })
-  }, [])
-
-  // handleTouch removed
-
-  function getCls(count: number): string {
-    if (count === 0) return 'hm-0'
-    if (count === 1) return 'hm-4'
-      // return 'hm-1'
-    // if (count <= 3) return 'hm-3'
-    
-  }
-
-
-
-  return (
-    <div className="unified-heatmap" style={{ marginTop: 16 }} onMouseMove={handleMouseMove}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <span style={{ fontSize: 12, color: 'var(--text)' }}>
-          {completedWorkouts} completed workouts
-        </span>
-      </div>
-
-      
-<div className="hm-scroll">
-        {/* Single grid for both month labels + cells */}
-<div
-  className="hm-grid"
-  style={{
-    gridTemplateColumns: `repeat(${totalCols}, 14px)`,
-    gridTemplateRows: 'auto repeat(7, 14px)',
-    gridAutoFlow: 'unset',
-  }}
->
-  {/* Row 0: month labels */}
-  {Array.from({ length: totalCols }).map((_, col) => {
-    const label = labels.find((l) => l.col === col)
-    return (
-      <div
-        key={`m${col}`}
-        className="hm-month"
-        style={{
-          gridRow: 1,
-          gridColumn: col + 1,
-          textAlign: 'left',
-          whiteSpace: 'nowrap',
-          fontSize: 11,
-          color: 'var(--text-muted)',
-        }}
-      >
-        {label?.month ?? ''}
-      </div>
-    )
-  })}
-
-  {/* Padding cells */}
-  {Array(pad).fill(null).map((_, i) => (
-  <div
-    key={`p${i}`}
-    className="hm-cell hm-empty"
-    style={{ gridRow: i + 2, gridColumn: 1 }}
-  />
-))}
-
-  {/* Day cells */}
-  {days.map((d, i) => {
-    const day = dayMap.get(d)!
-    const col = Math.floor((pad + i) / 7) + 1
-    const row = ((pad + i) % 7) + 2  // +2 because row 1 is month labels
-    return (
-      <div
-        key={d}
-        className={`hm-cell ${getCls(day.count)}`}
-        style={{ borderRadius: 3, cursor: 'pointer', gridRow: row, gridColumn: col }}
-        onMouseEnter={() => setHovered(day)}
-        onMouseLeave={() => setHovered(null)}
-        role="button"
-        tabIndex={0}
-        aria-label={`${d}: ${day.count} workouts`}
-      />
-    )
-  })}
-</div>
-</div>
-
-      {/* Legend */}
-      <div className="hm-legend-row">
-        <div className="hm-legend-item">
-          <div className="hm-legend-dot hm-0" />
-          <span>None</span>
-        </div>
-        <div className="hm-legend-item">
-          <div className="hm-legend-dot hm-4" />
-          <span>1</span>
-        </div>
-        {/* <div className="hm-legend-item">
-          <div className="hm-legend-dot hm-3" />
-          <span>2-3</span>
-        </div>
-        <div className="hm-legend-item">
-          <div className="hm-legend-dot hm-4" />
-          <span>4+</span>
-        </div> */}
-      </div>
-
-      {/* Hover tooltip */}
-      {hovered && (
-        <Tooltip day={hovered} x={mousePos.x} y={mousePos.y} />
-      )}
-    </div>
-  )
-}
-
-function Tooltip({ 
-  day, 
-  x, 
-  y 
-}: {
-  day: DayData
-  x: number
-  y: number
-}) {
-  const style: CSSProperties = {
-    position: 'fixed',
-    left: x + 12,
-    top: y - 12,
-    zIndex: 9999,
-    pointerEvents: 'none',
-  }
-
-  const dateStr = new Date(day.date + 'T00:00:00').toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  })
-
-  return (
-    <div className="hm-tooltip" style={style}>
-      <p className="hm-tooltip-date">{dateStr}</p>
-      {day.count > 0 ? (
-        <>
-          <p className="hm-tooltip-label">Workouts completed ({day.count})</p>
-          <div className="hm-tooltip-habits">
-            {day.titles.slice(0, 5).map((title, i) => (
-              <span key={i} className="hm-tooltip-tag" style={{ 
-                background: 'rgba(34, 197, 94, 0.12)', 
-                borderColor: 'rgba(34, 197, 94, 0.35)', 
-                color: '#22c55e' 
-              }}>
-                {title}
-              </span>
-            ))}
-            {day.titles.length > 5 && (
-              <span className="hm-tooltip-tag" style={{ background: 'var(--border)', color: 'var(--text)' }}>
-                +{day.titles.length - 5} more
-              </span>
-            )}
-          </div>
-        </>
-      ) : (
-        <p className="hm-tooltip-empty">No workouts</p>
-      )}
-    </div>
-  )
-}
 
 
 
@@ -536,12 +309,12 @@ function WorkoutRow({ w, exercises, onClick }: { w: CompletedWorkout; exercises:
 
 // ── Filter types ──────────────────────────────────────────
 
-type TimeFilter = 'all'|'week'|'month'|'3months'|'6months'|'year'
+type TimeFilter = 'all'|'week'|'month'|'3months'|'6months'|'year'|'2years'|'alltime'
 
 function filterWorkouts(ws: CompletedWorkout[], time: TimeFilter, name: string): CompletedWorkout[] {
   let r = name ? ws.filter(w => w.workoutPlanName.toLowerCase().includes(name.toLowerCase())) : ws
   if (time !== 'all') {
-    const days: Record<TimeFilter, number> = { all:0, week:7, month:30, '3months':90, '6months':180, year:365 }
+    const days: Record<TimeFilter, number> = { all:4000, week:7, month:30, '3months':90, '6months':180, year:365, '2years':730, 'alltime':4000 }
     const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days[time])
     r = r.filter(w => new Date(w.startedAt) >= cutoff)
   }
@@ -568,7 +341,20 @@ export default function Workouts() {
   const [exDetailModal,setExDetailModal]= useState<Exercise|null>(null)
   const [goalModal,    setGoalModal]    = useState(false)
   const [showStart,    setShowStart]    = useState(false)
-  const [showActive,   setShowActive]   = useState(!!localStorage.getItem('activeWorkout'))
+  const [showActive,   setShowActive]   = useState(false)
+
+  // Auto-resume active workout if exists (block if work session active)
+  useEffect(() => {
+    const workoutActive = localStorage.getItem('activeWorkout')
+    const sessionActive = localStorage.getItem('activeWorkSession')
+    if (sessionActive) {
+      alert('Finish your work session first!')
+      return
+    }
+    if (workoutActive) {
+      setShowActive(true)
+    }
+  }, [])
   const [weeklyTarget, setWeeklyTarget] = useState(() => parseInt(localStorage.getItem('weeklyWorkoutTarget') ?? '3'))
   const [deletePlanId, setDeletePlanId] = useState<string | null>(null)
   const [deletePlanName, setDeletePlanName] = useState<string>('')
@@ -615,7 +401,9 @@ export default function Workouts() {
     if (planExIds && !planExIds.has(e.id)) return false
     return true
   })
-  const filteredCW    = filterWorkouts(allWorkouts, timeFilter, nameFilter)
+        const filterDaysMapping: Record<TimeFilter, number> = { all:4000, week:7, month:30, '3months':90, '6months':180, year:365, '2years':730, 'alltime':4000 }
+        const filterDays = filterDaysMapping[timeFilter]
+        const filteredCW    = filterWorkouts(allWorkouts, timeFilter, nameFilter)
   const displayedEx   = showAllEx  ? filteredEx   : filteredEx.slice(0, 8)
   const displayedCW   = showAllCW  ? filteredCW   : filteredCW.slice(0, 8)
 
@@ -627,7 +415,14 @@ export default function Workouts() {
           {localStorage.getItem('activeWorkout') && (
             <button className="btn btn-secondary" onClick={() => setShowActive(true)}>▶ Resume workout</button>
           )}
-          <button className="btn btn-primary" onClick={() => setShowStart(true)}><IconPlus /> Start workout</button>
+          <button className="btn btn-primary" onClick={() => {
+            const sessionActive = localStorage.getItem('activeWorkSession')
+            if (sessionActive) {
+              alert('Cannot start workout during active work session. Finish session first.')
+              return
+            }
+            setShowStart(true)
+          }}><IconPlus /> Start workout</button>
         </div>
       </div>
 
@@ -656,6 +451,8 @@ export default function Workouts() {
               <option value="3months">Last 3 months</option>
               <option value="6months">Last 6 months</option>
               <option value="year">Last year</option>
+              <option value="2years">Last 2 years</option>
+              <option value="alltime">All time</option>
             </select>
             <button className={`btn ${showHeatmap ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setShowHeatmap(h => !h)}>
               {showHeatmap ? 'Hide heatmap' : '📅 Heatmap'}
@@ -666,8 +463,8 @@ export default function Workouts() {
 
         {showHeatmap && (
           <div className="card" style={{ marginBottom:12 }}>
-            <h2 className="card-title">Workout frequency</h2>
-            <WorkoutHeatmap workouts={filteredCW} />
+      <h2 className="card-title">Workout frequency</h2>
+      <WorkoutHeatmap workouts={filteredCW} daysBack={filterDays} />
           </div>
         )}
 
@@ -751,14 +548,14 @@ export default function Workouts() {
       {detailModal && <WorkoutDetailModal workout={detailModal} exercises={exercises} onClose={() => setDetailModal(null)} />}
       {exDetailModal && <ExerciseDetailModal exercise={exDetailModal} onClose={() => setExDetailModal(null)} onEdit={() => { setExModal(exDetailModal); setExDetailModal(null) }} />}
       {showStart && <StartWorkoutModal onClose={() => setShowStart(false)} onStarted={() => { setShowStart(false); setShowActive(true) }} />}
-      {goalModal && (
+{goalModal && (
         <Modal title="Weekly goal" onClose={() => setGoalModal(false)} width={360}>
-          <div className="form-stack">
-            <label className="form-label">Workouts per week<input ref={goalRef} className="field" type="number" min={1} max={14} defaultValue={weeklyTarget} autoFocus /></label>
-            <div className="form-actions"><button className="btn btn-secondary" onClick={() => setGoalModal(false)}>Cancel</button><button className="btn btn-primary" onClick={saveGoal}>Save</button></div>
-          </div>
+    <div className="form-stack">
+      <label className="form-label">Workouts per week<input ref={goalRef} className="field" type="number" min={1} max={14} defaultValue={weeklyTarget} autoFocus /></label>
+      <div className="form-actions"><button className="btn btn-secondary" onClick={() => setGoalModal(false)}>Cancel</button><button className="btn btn-primary" onClick={saveGoal}>Save</button></div>
+    </div>
         </Modal>
-      )}
+)}
 
       {deletePlanId && (
         <ConfirmDeleteModal

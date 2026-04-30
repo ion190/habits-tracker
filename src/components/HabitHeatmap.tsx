@@ -1,12 +1,13 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import type { CSSProperties } from 'react'
 import { toDateKey } from '../utils'
-import type { Task } from '../db/database'
+import type { Habit, HabitLog } from '../db/database'
 
 interface DayData {
   date: string
   count: number
-  titles: string[]
+  habitNames: string[]
+  habitColors: string[]
 }
 
 function Tooltip({ day, x, y }: { day: DayData; x: number; y: number }) {
@@ -21,24 +22,27 @@ function Tooltip({ day, x, y }: { day: DayData; x: number; y: number }) {
       <p className="hm-tooltip-date">{dateStr}</p>
       {day.count > 0 ? (
         <>
-          <p className="hm-tooltip-label">Tasks completed ({day.count})</p>
+          <p className="hm-tooltip-label">Habits completed ({day.count})</p>
           <div className="hm-tooltip-habits">
-            {day.titles.slice(0, 5).map((title, i) => (
+            {day.habitNames.slice(0, 5).map((name, i) => (
               <span key={i} className="hm-tooltip-tag" style={{
-                background: 'rgba(170, 59, 255, 0.12)',
-                borderColor: 'rgba(170, 59, 255, 0.35)',
-                color: 'var(--accent)',
-              }}>{title}</span>
+                background: day.habitColors[i] + '22',
+                borderColor: day.habitColors[i] + '55',
+                color: day.habitColors[i],
+              }}>
+                <span className="hm-tooltip-dot" style={{ background: day.habitColors[i] }} />
+                {name}
+              </span>
             ))}
-            {day.titles.length > 5 && (
+            {day.habitNames.length > 5 && (
               <span className="hm-tooltip-tag" style={{ background: 'var(--border)', color: 'var(--text)' }}>
-                +{day.titles.length - 5} more
+                +{day.habitNames.length - 5} more
               </span>
             )}
           </div>
         </>
       ) : (
-        <p className="hm-tooltip-empty">No tasks completed</p>
+        <p className="hm-tooltip-empty">No habits completed</p>
       )}
     </div>
   )
@@ -52,7 +56,13 @@ function getCls(count: number): string {
   return 'hm-task-4'
 }
 
-export default function TaskHeatmap({ tasks }: { tasks: Task[] }) {
+interface Props {
+  habits: Habit[]
+  logs: HabitLog[]
+  filterHabitIds?: string[]
+}
+
+export default function HabitHeatmap({ habits, logs, filterHabitIds }: Props) {
   const [hovered, setHovered] = useState<DayData | null>(null)
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -76,20 +86,24 @@ export default function TaskHeatmap({ tasks }: { tasks: Task[] }) {
 
   const dayMap = useMemo(() => {
     const map = new Map<string, DayData>()
-    for (const key of days) map.set(key, { date: key, count: 0, titles: [] })
-    
-    // Only completed tasks contribute to heatmap
-    const completedTasks = tasks.filter(task => !!task.completedAt)
-    for (const task of completedTasks) {
-      const key = toDateKey(task.completedAt!)
+    for (const key of days) map.set(key, { date: key, count: 0, habitNames: [], habitColors: [] })
+
+    const filteredLogs = filterHabitIds ? logs.filter(l => filterHabitIds.includes(l.habitId)) : logs
+
+    for (const log of filteredLogs) {
+      const key = toDateKey(log.completedAt)
       const entry = map.get(key)
-      if (entry) { 
-        entry.count++; 
-        entry.titles.push(task.title) 
+      if (entry && !entry.habitColors.some(c => c === log.habitId)) {
+        const habit = habits.find(h => h.id === log.habitId)
+        if (habit) {
+          entry.count++
+          entry.habitNames.push(habit.name)
+          entry.habitColors.push(habit.color)
+        }
       }
     }
     return map
-  }, [days, tasks])
+  }, [days, habits, logs, filterHabitIds])
 
   const firstDayOfWeek = new Date(days[0]).getDay()
   const pad = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1
@@ -115,18 +129,19 @@ export default function TaskHeatmap({ tasks }: { tasks: Task[] }) {
     setMousePos({ x: e.clientX, y: e.clientY })
   }, [])
 
-  const completedCount = tasks.filter(t => t.completedAt).length
-
-  console.log('📊 TaskHeatmap data:', { 
-    totalTasks: tasks.length,
-    completedCount,
-    daysWithCompletions: Array.from(dayMap.values()).filter(d => d.count > 0).length
+  const filteredCount = filterHabitIds ? logs.filter(l => filterHabitIds.includes(l.habitId)).length : logs.length
+  
+  console.log('📊 HabitHeatmap data:', { 
+    totalLogs: logs.length, 
+    filteredLogs: filteredCount,
+    filterHabitIds: filterHabitIds?.length || 0,
+    sampleDaysWithData: Array.from(dayMap.values()).filter(d => d.count > 0).length
   })
 
   return (
     <div className="unified-heatmap" style={{ marginTop: 16 }} onMouseMove={handleMouseMove}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <span style={{ fontSize: 12, color: 'var(--text)' }}>{completedCount} completed tasks</span>
+        <span style={{ fontSize: 12, color: 'var(--text)' }}>{filteredCount} habit completions</span>
       </div>
 
       <div className="hm-scroll" ref={scrollRef}>
@@ -167,7 +182,7 @@ export default function TaskHeatmap({ tasks }: { tasks: Task[] }) {
                 onMouseLeave={() => setHovered(null)}
                 role="button"
                 tabIndex={0}
-                aria-label={`${d}: ${day.count} tasks`}
+                aria-label={`${d}: ${day.count} habits`}
               />
             )
           })}

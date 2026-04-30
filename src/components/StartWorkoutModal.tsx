@@ -135,6 +135,7 @@ export default function StartWorkoutModal({ onClose, onStarted }: Props) {
       })),
     }
     localStorage.setItem('activeWorkout', JSON.stringify(session))
+    window.dispatchEvent(new CustomEvent('workoutStatusChange'))
     onStarted()
     onClose()
   }

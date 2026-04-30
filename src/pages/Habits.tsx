@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { db, generateId } from '../db/database'
 import { sync } from '../db/sync'
 import type { Habit, HabitLog } from '../db/database'
 import Modal from '../components/Modal'
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
 import HabitValueModal from '../components/HabitValueModal'
-import { IconPlus, IconTrash, IconCheck } from '../components/Icons'
+import HabitHeatmap from '../components/HabitHeatmap'
+import { IconPlus, IconTrash, IconCheck, IconArchive } from '../components/Icons'
 import { toDateKey } from '../utils'
 
 const COLORS = [
@@ -288,7 +289,7 @@ function HabitRow({
 
       <div style={{ display: 'flex', gap: 6 }}>
         <button className="btn btn-ghost" onClick={onEdit}>Edit</button>
-        <button className="btn btn-ghost" onClick={onArchive} title="Archive">🗃</button>
+        <button className="btn btn-ghost" onClick={onArchive} title="Archive"><IconArchive /></button>
       </div>
       </div>
   )
@@ -308,11 +309,40 @@ export default function Habits() {
 
   const [valueModalHabit, setValueModalHabit] = useState<Habit | null>(null)
 
-  async function reload() {
+  // Tag filter state
+  const [selectedTags, setSelectedTags] = useState<string[]>([])
+
+  const allTags = useMemo(() => {
+    return Array.from(new Set(habits.flatMap(h => h.tags))).sort()
+  }, [habits])
+
+  // function toggleTag(tag: string) {
+  //   setSelectedTags(prev => 
+  //     prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
+  //   )
+  // }
+
+  const displayedHabits = useMemo(() => {
+    return selectedTags.length === 0 
+      ? habits 
+      : habits.filter(h => selectedTags.every(tag => h.tags.includes(tag)))
+  }, [habits, selectedTags])
+
+  const filteredLogs = useMemo(() => {
+    if (selectedTags.length === 0) return logs
+    return logs.filter(l => habits.some(h => selectedTags.some(tag => h.tags.includes(tag)) && h.id === l.habitId))
+  }, [logs, habits, selectedTags])
+
+  // Heatmap filter state
+  const [filterMode, setFilterMode] = useState<'all' | 'none' | string>('all')
+  const effectiveFilterHabitIds = filterMode === 'all' ? displayedHabits.map(h => h.id) : filterMode === 'none' ? [] : [filterMode as string].filter(id => displayedHabits.some(h => h.id === id))
+
+async function reload() {
     const [h, l] = await Promise.all([
       db.habits.toArray(),
       db.habitLogs.toArray(),
     ])
+    console.log('🔥 Habits reload:', { totalHabits: h.length, activeHabits: h.filter(x => !x.archivedAt).length, totalLogs: l.length, todayLogs: l.filter(log => toDateKey(log.completedAt) === toDateKey(new Date().toISOString())).length })
     setHabits(h.filter(x => !x.archivedAt))
     setArchivedHabits(h.filter(x => x.archivedAt))
     setLogs(l)
@@ -398,13 +428,13 @@ export default function Habits() {
   if (loading) return <div className="page-loading">Loading…</div>
 
   const today     = toDateKey(new Date().toISOString())
-  const todayLogs = logs.filter(l => toDateKey(l.completedAt) === today)
+  // const todayLogs = logs.filter(l => toDateKey(l.completedAt) === today)
 
   return (
     <div className="page">
       <div className="page-header">
         <h1>Habits</h1>
-        <p className="page-sub">{todayLogs.length}/{habits.length} done today</p>
+        <p className="page-sub">{logs.filter(l => toDateKey(l.completedAt) === today && displayedHabits.some(h => h.id === l.habitId)).length}/{displayedHabits.length} done today</p>
       </div>
 
       <div className="section-header">
@@ -414,9 +444,68 @@ export default function Habits() {
         </button>
       </div>
 
-      {habits.length === 0
-        ? <div className="card"><p className="empty-hint">No habits yet. Add your first one!</p></div>
-        : habits.map(h => (
+      {/* Tag Filter UI */}
+      {allTags.length > 0 && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>Filter by tags:</span>
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+              <span
+                style={{
+                  padding: '4px 8px',
+                  background: selectedTags.length === 0 ? 'var(--accent-bg)' : 'var(--bg)',
+                  border: `1px solid ${selectedTags.length === 0 ? 'var(--accent)' : 'var(--border)'}`,
+                  borderRadius: 6,
+                  fontSize: 12,
+                  cursor: 'pointer'
+                }}
+                onClick={() => setSelectedTags([])}
+              >
+                All ({habits.length})
+              </span>
+              {allTags.map(tag => (
+                <span
+                  key={tag}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    padding: '4px 8px',
+                    background: selectedTags.includes(tag) ? 'var(--accent-bg)' : 'var(--bg)',
+                    border: `1px solid ${selectedTags.includes(tag) ? 'var(--accent)' : 'var(--border)'}`,
+                    borderRadius: 6,
+                    fontSize: 12,
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => {
+                    setSelectedTags(prev => 
+                      prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
+                    )
+                  }}
+                >
+                  {tag} ({habits.filter(h => h.tags.includes(tag)).length})
+                  {selectedTags.includes(tag) && <span style={{ marginLeft: 4 }}>✕</span>}
+                </span>
+              ))}
+            </div>
+            {selectedTags.length > 0 && (
+              <button
+                className="btn btn-sm btn-ghost"
+                onClick={() => setSelectedTags([])}
+                style={{ fontSize: 12 }}
+              >
+                Clear ({displayedHabits.length})
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {displayedHabits.length === 0 ? (
+        <div className="card">
+          <p className="empty-hint">No habits yet. Add your first one!</p>
+        </div>
+        ) : (
+        displayedHabits.map(h => (
           <HabitRow
             key={h.id}
             habit={h}
@@ -426,7 +515,29 @@ export default function Habits() {
             onArchive={() => archiveHabit(h)}
           />
         ))
-      }
+      )}
+
+      {/* Habit Heatmap Section */}
+      {habits.length > 0 && (
+        <section className="card heatmap-card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h2 className="card-title">Habit heatmap</h2>
+            <select 
+              value={filterMode}
+              onChange={(e) => setFilterMode(e.target.value as 'all' | 'none' | string)}
+              className="field"
+              style={{ fontSize: 13, padding: '6px 10px' }}
+            >
+              <option value="all">All habits ({displayedHabits.length})</option>
+              <option value="none">No filter</option>
+              {displayedHabits.map(h => (
+                <option key={h.id} value={h.id}>{h.name}</option>
+              ))}
+            </select>
+          </div>
+          <HabitHeatmap habits={displayedHabits} logs={filteredLogs} filterHabitIds={effectiveFilterHabitIds} />
+        </section>
+      )}
 
       {archivedHabits.length > 0 && (
         <div style={{ marginTop: 8, marginBottom: 8 }}>
@@ -513,3 +624,4 @@ export default function Habits() {
     </div>
   )
 }
+

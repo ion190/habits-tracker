@@ -1,4 +1,3 @@
-// src/App.tsx
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './components/AuthContext'
 import Sidebar from './components/Sidebar'
@@ -10,6 +9,9 @@ import Tasks from './pages/Tasks'
 import Workouts from './pages/Workouts'
 import Settings from './pages/Settings'
 import AuthPage from './pages/AuthPage'
+import WorkoutTimer from './components/WorkoutTimer'
+import WorkSessionTimer from './components/WorkSessionTimer'
+import { useEffect, lazy, Suspense } from 'react'
 
 function DashboardPage() {
   return (
@@ -19,6 +21,9 @@ function DashboardPage() {
     </div>
   )
 }
+
+const WorkSessions = lazy(() => import('./pages/WorkSessions'))
+
 
 function AppShell() {
   const { user, loading } = useAuth()
@@ -37,6 +42,10 @@ function AppShell() {
 
   return (
     <div className="app-layout">
+      <div className="header-navbar">
+        <WorkoutTimer />
+        <WorkSessionTimer />
+      </div>
       <Sidebar />
       <main className="app-main">
         <Routes>
@@ -46,6 +55,11 @@ function AppShell() {
           <Route path="/habits/:habitId"      element={<HabitDetail />} />
           <Route path="/tasks"                element={<Tasks />} />
           <Route path="/workouts"             element={<Workouts />} />
+          <Route path="/work-sessions"        element={
+            <Suspense fallback={<div className="page-loading">Loading Work Sessions...</div>}>
+              <WorkSessions />
+            </Suspense>
+          } />
           <Route path="/settings"             element={<Settings />} />
           <Route path="*"                     element={<Navigate to="/dashboard" replace />} />
         </Routes>

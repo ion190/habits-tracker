@@ -112,6 +112,50 @@ export interface SyncQueueEntry {
   retries: number           // how many times we've tried
 }
 
+// ── Work Sessions ─────────────────────────────────────────
+
+export interface WorkSessionCategory {
+  id: string
+  name: string  // 'work', 'meditation', etc.
+  color: string
+  icon: string
+  createdAt: string
+}
+
+export interface WorkSessionTaskSnapshot {
+  taskId: string
+  title: string
+  tags: string[]
+}
+
+export interface ActiveWorkSession {
+  id: string
+  categoryId: string  // ref to category
+  categoryName: string  // snapshot
+  categoryColor: string
+  categoryIcon: string
+  durationSeconds: number  // user-set timer
+  notes?: string
+  tasks: WorkSessionTaskSnapshot[]  // selected tasks snapshot
+  startedAt: string
+  pausedAt?: string  // for pause/resume
+}
+
+export interface CompletedWorkSession {
+  id: string
+  categoryId: string
+  categoryName: string
+  categoryColor: string
+  plannedDurationSeconds: number
+  actualDurationSeconds: number
+  distractionSeconds: number  // user input
+  productivityPct: number  // calculated/confirmed
+  notes?: string
+  tasks: WorkSessionTaskSnapshot[]
+  startedAt: string
+  endedAt: string
+}
+
 // ── Export / import shape ─────────────────────────────────
 
 export interface ExportData {
@@ -123,6 +167,8 @@ export interface ExportData {
   exercises: Exercise[]
   workoutPlans: WorkoutPlan[]
   completedWorkouts: CompletedWorkout[]
+  workSessionCategories: WorkSessionCategory[]
+  completedWorkSessions: CompletedWorkSession[]
 }
 
 // ── Database ──────────────────────────────────────────────
@@ -134,18 +180,22 @@ class RitualsDB extends Dexie {
   exercises!: Table<Exercise>
   workoutPlans!: Table<WorkoutPlan>
   completedWorkouts!: Table<CompletedWorkout>
+  workSessionCategories!: Table<WorkSessionCategory>
+  completedWorkSessions!: Table<CompletedWorkSession>
   syncQueue!: Table<SyncQueueEntry>
 
   constructor() {
     super('RitualsDB')
-    this.version(6).stores({
-      habits:            '&id, name, frequency, archivedAt',
-      habitLogs:         '&id, habitId, completedAt',
-      tasks:             '&id, dueDate, notificationTime, completedAt, urgency, importance, archivedAt',
-      exercises:         '&id, name, category',
-      workoutPlans:      '&id, name, createdAt',
-      completedWorkouts: '&id, workoutPlanId, startedAt',
-      syncQueue:         '&id, table, recordId, createdAt',
+    this.version(7).stores({
+      habits:                 '&id, name, frequency, archivedAt',
+      habitLogs:              '&id, habitId, completedAt',
+      tasks:                  '&id, dueDate, notificationTime, completedAt, urgency, importance, archivedAt',
+      exercises:              '&id, name, category',
+      workoutPlans:           '&id, name, createdAt',
+      completedWorkouts:      '&id, workoutPlanId, startedAt',
+      workSessionCategories:  '&id, name',
+      completedWorkSessions:  '&id, categoryId, startedAt',
+      syncQueue:              '&id, table, recordId, createdAt',
     })
   }
 }
@@ -162,14 +212,16 @@ export function generateId(): string {
 
 export async function exportDatabase(): Promise<void> {
   const data: ExportData = {
-    exportedAt:        new Date().toISOString(),
-    version:           1,
-    habits:            await db.habits.toArray(),
-    habitLogs:         await db.habitLogs.toArray(),
-    tasks:             await db.tasks.toArray(),
-    exercises:         await db.exercises.toArray(),
-    workoutPlans:      await db.workoutPlans.toArray(),
-    completedWorkouts: await db.completedWorkouts.toArray(),
+    exportedAt:              new Date().toISOString(),
+    version:                 2,
+    habits:                  await db.habits.toArray(),
+    habitLogs:               await db.habitLogs.toArray(),
+    tasks:                   await db.tasks.toArray(),
+    exercises:               await db.exercises.toArray(),
+    workoutPlans:            await db.workoutPlans.toArray(),
+    completedWorkouts:       await db.completedWorkouts.toArray(),
+    workSessionCategories:   await db.workSessionCategories.toArray(),
+    completedWorkSessions:   await db.completedWorkSessions.toArray(),
   }
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
   const url  = URL.createObjectURL(blob)
@@ -188,6 +240,7 @@ export async function importDatabase(file: File): Promise<void> {
   const tables = [
     db.habits, db.habitLogs, db.tasks,
     db.exercises, db.workoutPlans, db.completedWorkouts,
+    db.workSessionCategories, db.completedWorkSessions,
   ]
   await db.transaction('rw', tables, async () => {
     await db.habits.clear()
@@ -196,12 +249,16 @@ export async function importDatabase(file: File): Promise<void> {
     await db.exercises.clear()
     await db.workoutPlans.clear()
     await db.completedWorkouts.clear()
+    await db.workSessionCategories.clear()
+    await db.completedWorkSessions.clear()
 
-    if (data.habits?.length)            await db.habits.bulkAdd(data.habits)
-    if (data.habitLogs?.length)         await db.habitLogs.bulkAdd(data.habitLogs)
-    if (data.tasks?.length)             await db.tasks.bulkAdd(data.tasks)
-    if (data.exercises?.length)         await db.exercises.bulkAdd(data.exercises)
-    if (data.workoutPlans?.length)      await db.workoutPlans.bulkAdd(data.workoutPlans)
-    if (data.completedWorkouts?.length) await db.completedWorkouts.bulkAdd(data.completedWorkouts)
+    if (data.habits?.length)                  await db.habits.bulkAdd(data.habits)
+    if (data.habitLogs?.length)               await db.habitLogs.bulkAdd(data.habitLogs)
+    if (data.tasks?.length)                   await db.tasks.bulkAdd(data.tasks)
+    if (data.exercises?.length)               await db.exercises.bulkAdd(data.exercises)
+    if (data.workoutPlans?.length)            await db.workoutPlans.bulkAdd(data.workoutPlans)
+    if (data.completedWorkouts?.length)       await db.completedWorkouts.bulkAdd(data.completedWorkouts)
+    if (data.workSessionCategories?.length)   await db.workSessionCategories.bulkAdd(data.workSessionCategories)
+    if (data.completedWorkSessions?.length)   await db.completedWorkSessions.bulkAdd(data.completedWorkSessions)
   })
 }

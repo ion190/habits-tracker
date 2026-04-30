@@ -1,4 +1,4 @@
-/** Format seconds → '45m' or '1h 23m' */
+/** Format seconds → '45m' or '1h 23m' (elapsed time) */
 export function formatDuration(seconds: number): string {
   if (seconds <= 0) return '0m'
   if (seconds < 3600) return `${Math.round(seconds / 60)}m`
@@ -6,6 +6,15 @@ export function formatDuration(seconds: number): string {
   const m = Math.round((seconds % 3600) / 60)
   return m > 0 ? `${h}h ${m}m` : `${h}h`
 }
+
+/** Format remaining seconds → '4:32' (MM:SS), flashes red <10s */
+export function formatCountdown(seconds: number): string {
+  if (seconds <= 0) return '00:00'
+  const m = Math.floor(seconds / 60).toString().padStart(2, '0')
+  const s = (seconds % 60).toString().padStart(2, '0')
+  return `${m}:${s}`
+}
+
 
 /** ISO date string → 'YYYY-MM-DD' */
 export function toDateKey(iso: string): string {
