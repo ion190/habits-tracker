@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { db, generateId } from '../db/database'
 import { sync } from '../db/sync'
@@ -27,27 +27,85 @@ function getLastNDays(n: number): string[] {
 
 function Heatmap({ logs, color }: { logs: HabitLog[]; color: string }) {
   const days = getLastNDays(364)
-  const map  = buildHeatmap(logs)
-  const firstDayOfWeek = new Date(days[0]).getDay() // 0=Sun, 1=Mon...6=Sat
-  const pad  = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1 // Convert to Monday-first: 0=Mon, 6=Sun
+  const map = buildHeatmap(logs)
+
+  const firstDayOfWeek = new Date(days[0]).getDay()
+  const pad = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1
+  const totalCols = Math.ceil((pad + days.length) / 7)
+
+  const labels = useMemo(() => {
+    const arr: { month: string; col: number }[] = []
+    let currentMonth = -1
+    days.forEach((d, i) => {
+      const date = new Date(d + 'T00:00:00')
+      const m = date.getMonth()
+      if (m !== currentMonth) {
+        currentMonth = m
+        const absPos = pad + i
+        const col = absPos % 7 === 0 ? Math.floor(absPos / 7) : Math.floor(absPos / 7) + 1
+        arr.push({ month: date.toLocaleString('en-US', { month: 'short' }), col })
+      }
+    })
+    return arr
+  }, [days, pad])
+
   return (
     <div className="heatmap-wrap">
-      <div className="heatmap-grid">
-        {Array(pad).fill(null).map((_, i) => <div key={`p${i}`} className="hm-cell hm-0" />)}
-        {days.map(day => (
-          <div key={day} className="hm-cell"
-            style={{
-              background: map.has(day) ? color : 'var(--border)',
-              opacity: map.has(day) ? Math.min(0.25 + map.get(day)! * 0.2, 1) : 1,
-            }}
-            title={`${day}: ${map.get(day) ?? 0}`}
-          />
-        ))}
+      <div className="hm-scroll">
+        <div
+          className="hm-grid"
+          style={{
+            gridTemplateColumns: `repeat(${totalCols}, 14px)`,
+            gridTemplateRows: 'auto repeat(7, 14px)',
+            gridAutoFlow: 'unset',
+          }}
+        >
+          {/* Month labels */}
+          {Array.from({ length: totalCols }).map((_, col) => {
+            const label = labels.find(l => l.col === col)
+            return (
+              <div key={`m${col}`} className="hm-month" style={{
+                gridRow: 1, gridColumn: col + 1,
+                textAlign: 'left', whiteSpace: 'nowrap',
+                fontSize: 11, color: 'var(--text)',
+              }}>
+                {label?.month ?? ''}
+              </div>
+            )
+          })}
+
+          {/* Padding */}
+          {Array(pad).fill(null).map((_, i) => (
+            <div key={`p${i}`} className="hm-cell hm-empty" style={{ gridRow: i + 2, gridColumn: 1 }} />
+          ))}
+
+          {/* Day cells */}
+          {days.map((day, i) => {
+            const count = map.get(day) ?? 0
+            const col = Math.floor((pad + i) / 7) + 1
+            const row = ((pad + i) % 7) + 2
+            return (
+              <div
+                key={day}
+                className="hm-cell"
+                style={{
+                  gridRow: row,
+                  gridColumn: col,
+                  background: count > 0 ? color : 'var(--border)',
+                  opacity: count > 0 ? Math.min(0.25 + count * 0.2, 1) : 1,
+                  borderRadius: 3,
+                }}
+                title={`${day}: ${count}`}
+              />
+            )
+          })}
+        </div>
       </div>
+
       <div className="heatmap-legend">
         <span>Less</span>
         {[0.25, 0.45, 0.65, 0.85, 1].map(o => (
-          <div key={o} className="hm-cell" style={{ background: color, opacity: o }} />
+          <div key={o} className="hm-cell" style={{ background: color, opacity: o, borderRadius: 3 }} />
         ))}
         <span>More</span>
       </div>

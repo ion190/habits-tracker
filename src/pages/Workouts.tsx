@@ -1,14 +1,17 @@
 import { useEffect, useState, useRef } from 'react'
+
 import { db, generateId } from '../db/database'
 import { sync } from '../db/sync'
+import WorkoutHeatmap from '../components/WorkoutHeatmap'
 import type { Exercise, WorkoutPlan, PlanExercise, CompletedWorkout } from '../db/database'
+
 import Modal from '../components/Modal'
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
 import ExerciseDetailModal from '../components/ExerciseDetailModal'
 import StartWorkoutModal from '../components/StartWorkoutModal'
-import ActiveWorkout from '../components/ActiveWorkout'
 import { IconPlus, IconTrash, IconSettings } from '../components/Icons'
-import { formatDuration, startOfWeek, toDateKey } from '../utils'
+import { formatDuration, startOfWeek } from '../utils'
+import ActiveWorkout from '../components/ActiveWorkout'
 
 // ── Completion circle ─────────────────────────────────────
 
@@ -74,24 +77,11 @@ function WorkoutDetailModal({ workout, exercises, onClose }: {
   )
 }
 
-// ── Workout heatmap ───────────────────────────────────────
 
-function WorkoutHeatmap({ workouts }: { workouts: CompletedWorkout[] }) {
-  const map = new Map<string, number>()
-  for (const w of workouts) { const d = toDateKey(w.startedAt); map.set(d, (map.get(d) ?? 0) + 1) }
-  const days = Array.from({ length: 364 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (363 - i)); return toDateKey(d.toISOString()) })
-  const firstDayOfWeek = new Date(days[0]).getDay() // 0=Sun, 1=Mon...6=Sat
-  const pad = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1 // Convert to Monday-first: 0=Mon, 6=Sun
-  const cls = (n: number) => n === 0 ? 'hm-0' : n === 1 ? 'hm-1' : n <= 3 ? 'hm-3' : 'hm-4'
-  return (
-    <div className="heatmap-wrap" style={{ marginTop: 16 }}>
-      <div className="heatmap-grid">
-        {Array(pad).fill(null).map((_, i) => <div key={`p${i}`} className="hm-cell hm-0" />)}
-        {days.map(d => <div key={d} className={`hm-cell ${cls(map.get(d) ?? 0)}`} title={`${d}: ${map.get(d) ?? 0} workout(s)`} />)}
-      </div>
-    </div>
-  )
-}
+
+
+
+
 
 // ── Exercise image upload ─────────────────────────────────
 
@@ -319,12 +309,12 @@ function WorkoutRow({ w, exercises, onClick }: { w: CompletedWorkout; exercises:
 
 // ── Filter types ──────────────────────────────────────────
 
-type TimeFilter = 'all'|'week'|'month'|'3months'|'6months'|'year'
+type TimeFilter = 'all'|'week'|'month'|'3months'|'6months'|'year'|'2years'|'alltime'
 
 function filterWorkouts(ws: CompletedWorkout[], time: TimeFilter, name: string): CompletedWorkout[] {
   let r = name ? ws.filter(w => w.workoutPlanName.toLowerCase().includes(name.toLowerCase())) : ws
   if (time !== 'all') {
-    const days: Record<TimeFilter, number> = { all:0, week:7, month:30, '3months':90, '6months':180, year:365 }
+    const days: Record<TimeFilter, number> = { all:4000, week:7, month:30, '3months':90, '6months':180, year:365, '2years':730, 'alltime':4000 }
     const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days[time])
     r = r.filter(w => new Date(w.startedAt) >= cutoff)
   }
@@ -351,7 +341,20 @@ export default function Workouts() {
   const [exDetailModal,setExDetailModal]= useState<Exercise|null>(null)
   const [goalModal,    setGoalModal]    = useState(false)
   const [showStart,    setShowStart]    = useState(false)
-  const [showActive,   setShowActive]   = useState(!!localStorage.getItem('activeWorkout'))
+  const [showActive,   setShowActive]   = useState(false)
+
+  // Auto-resume active workout if exists (block if work session active)
+  useEffect(() => {
+    const workoutActive = localStorage.getItem('activeWorkout')
+    const sessionActive = localStorage.getItem('activeWorkSession')
+    if (sessionActive) {
+      alert('Finish your work session first!')
+      return
+    }
+    if (workoutActive) {
+      setShowActive(true)
+    }
+  }, [])
   const [weeklyTarget, setWeeklyTarget] = useState(() => parseInt(localStorage.getItem('weeklyWorkoutTarget') ?? '3'))
   const [deletePlanId, setDeletePlanId] = useState<string | null>(null)
   const [deletePlanName, setDeletePlanName] = useState<string>('')
@@ -398,7 +401,9 @@ export default function Workouts() {
     if (planExIds && !planExIds.has(e.id)) return false
     return true
   })
-  const filteredCW    = filterWorkouts(allWorkouts, timeFilter, nameFilter)
+        const filterDaysMapping: Record<TimeFilter, number> = { all:4000, week:7, month:30, '3months':90, '6months':180, year:365, '2years':730, 'alltime':4000 }
+        const filterDays = filterDaysMapping[timeFilter]
+        const filteredCW    = filterWorkouts(allWorkouts, timeFilter, nameFilter)
   const displayedEx   = showAllEx  ? filteredEx   : filteredEx.slice(0, 8)
   const displayedCW   = showAllCW  ? filteredCW   : filteredCW.slice(0, 8)
 
@@ -410,7 +415,14 @@ export default function Workouts() {
           {localStorage.getItem('activeWorkout') && (
             <button className="btn btn-secondary" onClick={() => setShowActive(true)}>▶ Resume workout</button>
           )}
-          <button className="btn btn-primary" onClick={() => setShowStart(true)}><IconPlus /> Start workout</button>
+          <button className="btn btn-primary" onClick={() => {
+            const sessionActive = localStorage.getItem('activeWorkSession')
+            if (sessionActive) {
+              alert('Cannot start workout during active work session. Finish session first.')
+              return
+            }
+            setShowStart(true)
+          }}><IconPlus /> Start workout</button>
         </div>
       </div>
 
@@ -439,6 +451,8 @@ export default function Workouts() {
               <option value="3months">Last 3 months</option>
               <option value="6months">Last 6 months</option>
               <option value="year">Last year</option>
+              <option value="2years">Last 2 years</option>
+              <option value="alltime">All time</option>
             </select>
             <button className={`btn ${showHeatmap ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setShowHeatmap(h => !h)}>
               {showHeatmap ? 'Hide heatmap' : '📅 Heatmap'}
@@ -449,8 +463,8 @@ export default function Workouts() {
 
         {showHeatmap && (
           <div className="card" style={{ marginBottom:12 }}>
-            <h2 className="card-title">Workout frequency</h2>
-            <WorkoutHeatmap workouts={filteredCW} />
+      <h2 className="card-title">Workout frequency</h2>
+      <WorkoutHeatmap workouts={filteredCW} daysBack={filterDays} />
           </div>
         )}
 
@@ -534,14 +548,14 @@ export default function Workouts() {
       {detailModal && <WorkoutDetailModal workout={detailModal} exercises={exercises} onClose={() => setDetailModal(null)} />}
       {exDetailModal && <ExerciseDetailModal exercise={exDetailModal} onClose={() => setExDetailModal(null)} onEdit={() => { setExModal(exDetailModal); setExDetailModal(null) }} />}
       {showStart && <StartWorkoutModal onClose={() => setShowStart(false)} onStarted={() => { setShowStart(false); setShowActive(true) }} />}
-      {goalModal && (
+{goalModal && (
         <Modal title="Weekly goal" onClose={() => setGoalModal(false)} width={360}>
-          <div className="form-stack">
-            <label className="form-label">Workouts per week<input ref={goalRef} className="field" type="number" min={1} max={14} defaultValue={weeklyTarget} autoFocus /></label>
-            <div className="form-actions"><button className="btn btn-secondary" onClick={() => setGoalModal(false)}>Cancel</button><button className="btn btn-primary" onClick={saveGoal}>Save</button></div>
-          </div>
+    <div className="form-stack">
+      <label className="form-label">Workouts per week<input ref={goalRef} className="field" type="number" min={1} max={14} defaultValue={weeklyTarget} autoFocus /></label>
+      <div className="form-actions"><button className="btn btn-secondary" onClick={() => setGoalModal(false)}>Cancel</button><button className="btn btn-primary" onClick={saveGoal}>Save</button></div>
+    </div>
         </Modal>
-      )}
+)}
 
       {deletePlanId && (
         <ConfirmDeleteModal

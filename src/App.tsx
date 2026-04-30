@@ -1,7 +1,7 @@
-// src/App.tsx
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './components/AuthContext'
 import Sidebar from './components/Sidebar'
+import RightSidebar from './components/RightSidebar'
 import Dashboard from './pages/Dashboard'
 import Habits from './pages/Habits'
 import HabitDetail from './pages/HabitDetail'
@@ -9,6 +9,21 @@ import Tasks from './pages/Tasks'
 import Workouts from './pages/Workouts'
 import Settings from './pages/Settings'
 import AuthPage from './pages/AuthPage'
+import WorkoutTimer from './components/WorkoutTimer'
+import WorkSessionTimer from './components/WorkSessionTimer'
+import { useEffect, lazy, Suspense } from 'react'
+
+function DashboardPage() {
+  return (
+    <div className="dashboard-layout">
+      <Dashboard />
+      <RightSidebar />
+    </div>
+  )
+}
+
+const WorkSessions = lazy(() => import('./pages/WorkSessions'))
+
 
 function AppShell() {
   const { user, loading } = useAuth()
@@ -27,15 +42,24 @@ function AppShell() {
 
   return (
     <div className="app-layout">
+      <div className="header-navbar">
+        <WorkoutTimer />
+        <WorkSessionTimer />
+      </div>
       <Sidebar />
       <main className="app-main">
         <Routes>
           <Route path="/"                     element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard"            element={<Dashboard />} />
+          <Route path="/dashboard"            element={<DashboardPage />} />
           <Route path="/habits"               element={<Habits />} />
           <Route path="/habits/:habitId"      element={<HabitDetail />} />
           <Route path="/tasks"                element={<Tasks />} />
           <Route path="/workouts"             element={<Workouts />} />
+          <Route path="/work-sessions"        element={
+            <Suspense fallback={<div className="page-loading">Loading Work Sessions...</div>}>
+              <WorkSessions />
+            </Suspense>
+          } />
           <Route path="/settings"             element={<Settings />} />
           <Route path="*"                     element={<Navigate to="/dashboard" replace />} />
         </Routes>
@@ -46,7 +70,7 @@ function AppShell() {
 
 export default function App() {
   return (
-    <BrowserRouter basename="/habits-tracker">
+    <BrowserRouter>
       <AuthProvider>
         <AppShell />
       </AuthProvider>
