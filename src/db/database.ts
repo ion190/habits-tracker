@@ -139,6 +139,7 @@ export interface ActiveWorkSession {
   tasks: WorkSessionTaskSnapshot[]  // selected tasks snapshot
   startedAt: string
   pausedAt?: string  // for pause/resume
+  totalElapsedSeconds?: number  // cumulative elapsed across pause/resume cycles
 }
 
 export interface CompletedWorkSession {

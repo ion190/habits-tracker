@@ -188,8 +188,9 @@ export default function Dashboard() {
 
   return (
     <div className="page">
-      <div className="page-header">
+<div className="page-header">
         <h1>Dashboard</h1>
+      
         <div className="header-time">
           <p className="page-sub">
             {currentTime.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
@@ -275,11 +276,22 @@ export default function Dashboard() {
         />
       )}
 
-      {showStartWorkout && (
+{showStartWorkout && (
         <ModalPortal title="Start workout" onClose={() => setShowStartWorkout(false)}>
           <StartWorkoutModal 
             onClose={() => setShowStartWorkout(false)} 
             onStarted={() => { setShowStartWorkout(false); navigate('/workouts', { replace: true }) }} 
+          />
+        </ModalPortal>
+      )}
+
+{showStartSession && (
+        <ModalPortal title="Start Work Session" onClose={() => setShowStartSession(false)}>
+          <StartWorkSessionModal
+            onClose={() => setShowStartSession(false)}
+            onStarted={() => {
+              setShowStartSession(false)
+            }}
           />
         </ModalPortal>
       )}

@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { db, generateId } from '../db/database'
 import StartWorkoutModal from './StartWorkoutModal'
+import StartWorkSessionModal from './StartWorkSessionModal'
 import type { Habit, HabitLog, Task } from '../db/database'
 import { toDateKey, startOfWeek, formatDuration } from '../utils'
 import { sync } from '../db/sync'
+import ModalPortal from './ModalPortal'
 
 interface Props {
   onDataChange?: () => void
@@ -137,7 +139,7 @@ export default function RightSidebar({ onDataChange }: Props) {
         )
       }
 
-      {/* Work session button */}
+{/* Work session button */}
       {activeSessionExists
         ? (
           <div className="rs-card" style={{ borderColor:'rgba(239,68,68,0.4)', background:'rgba(239,68,68,0.06)', cursor:'pointer' }}
@@ -147,11 +149,24 @@ export default function RightSidebar({ onDataChange }: Props) {
           </div>
         ) : (
           <button className="btn btn-secondary" style={{ width:'100%', justifyContent:'center' }}
-            onClick={() => navigate('/work-sessions')}>
+            onClick={() => setShowStartSession(true)}>
             ⏱️ Start work session
           </button>
         )
       }
+
+{/* Work session modal */}
+      {showStartSession && (
+        <ModalPortal title="Start Work Session" onClose={() => setShowStartSession(false)}>
+          <StartWorkSessionModal
+            onClose={() => setShowStartSession(false)}
+            onStarted={() => { 
+              setShowStartSession(false); 
+              navigate('/work-sessions')
+            }}
+          />
+        </ModalPortal>
+      )}
 
       {/* Weekly goal */}
       <div className="rs-card">

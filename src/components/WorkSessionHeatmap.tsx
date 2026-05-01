@@ -128,14 +128,17 @@ export default function WorkSessionHeatmap({ sessions, daysBack }: Props) {
       map.set(dayKey, { date: dayKey, totalSessions: 0, avgProductivity: 0, titles: [], colors: [] })
     }
 
-    for (const session of sessions) {
+for (const session of sessions) {
       const key = toDateKey(session.startedAt)
       const entry = map.get(key)
-      if (entry) {
+      // Only filter out obviously bad data (NaN, Infinity) - allow 0 duration sessions
+      const actual = session.actualDurationSeconds ?? 0
+      const productivity = session.productivityPct ?? 100
+      if (entry && actual >= 0 && Number.isFinite(actual) && Number.isFinite(productivity)) {
         entry.totalSessions++
         entry.titles.push(session.categoryName)
         entry.colors.push(session.categoryColor)
-        entry.avgProductivity = (entry.avgProductivity * (entry.totalSessions - 1) + session.productivityPct) / entry.totalSessions
+        entry.avgProductivity = (entry.avgProductivity * (entry.totalSessions - 1) + productivity) / entry.totalSessions
       }
     }
 

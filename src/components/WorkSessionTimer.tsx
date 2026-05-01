@@ -1,19 +1,31 @@
-
 import { useEffect, useState, useCallback } from 'react'
 import { formatCountdown } from '../utils'
+import type { ActiveWorkSession } from '../db/database'
+
+interface SessionData {
+  session: ActiveWorkSession
+  elapsed: number
+  isPaused: boolean
+}
 
 export default function WorkSessionTimer() {
-  const [remaining, setRemaining] = useState(0)
+  const [sessionData, setSessionData] = useState<SessionData | null>(null)
   const [isActive, setIsActive] = useState(false)
 
   const checkActive = useCallback(() => {
     const raw = localStorage.getItem('activeWorkSession')
     if (raw) {
       try {
-        const session = JSON.parse(raw) as any
-        const elapsed = Math.floor((Date.now() - new Date(session.startedAt).getTime()) / 1000)
-        const remaining = session.durationSeconds - elapsed
-        setRemaining(Math.max(0, remaining))
+        const session = JSON.parse(raw) as ActiveWorkSession
+        const isPaused = !!session.pausedAt
+        let elapsed: number
+        if (isPaused) {
+          elapsed = Math.floor((new Date(session.pausedAt!).getTime() - new Date(session.startedAt).getTime()) / 1000)
+        } else {
+          elapsed = Math.floor((Date.now() - new Date(session.startedAt).getTime()) / 1000)
+        }
+        const remaining = isPaused ? session.durationSeconds : Math.max(0, session.durationSeconds - elapsed)
+        setSessionData({ session, elapsed: Math.max(0, remaining), isPaused })
         setIsActive(true)
         return true
       } catch (e) {
@@ -22,7 +34,7 @@ export default function WorkSessionTimer() {
       }
     } else {
       setIsActive(false)
-      setRemaining(0)
+      setSessionData(null)
     }
     return false
   }, [])
@@ -43,31 +55,67 @@ export default function WorkSessionTimer() {
     }
   }, [checkActive])
 
-  if (!isActive || remaining === 0) return null
+  if (!isActive || !sessionData) return null
 
-  const isLow = remaining < 10
-  const blinkStyle = isLow ? { animation: 'blink 1s infinite' } : {}
+  const { session, elapsed: remaining, isPaused } = sessionData
+  const isLow = remaining < 10 && !isPaused
+  const totalDuration = session.durationSeconds
+  const progressPct = totalDuration > 0 ? ((totalDuration - remaining) / totalDuration) * 100 : 0
+
+  const handleClick = () => {
+    window.dispatchEvent(new CustomEvent('showEndWorkSessionModal'))
+  }
 
   return (
     <div 
       className="header-timer work-session-timer"
       style={{ 
-        ...blinkStyle,
-        background: 'rgba(239,68,68,0.2)',
-        color: 'var(--danger)',
-        border: '1px solid var(--danger)',
-        fontWeight: 600
+        color: isPaused ? '#f59e0b' : '#a5b4fc',
+        border: `1px solid ${isPaused ? 'rgba(245, 158, 11, 0.4)' : 'rgba(99, 102, 241, 0.4)'}`,
+        fontWeight: 600,
+        padding: '6px 14px',
+        borderRadius: 20,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        cursor: 'pointer',
+        transition: 'all 0.3s ease',
+        boxShadow: isLow 
+          ? '0 0 20px rgba(248, 113, 113, 0.3)' 
+          : isPaused
+            ? '0 0 15px rgba(245, 158, 11, 0.2)'
+            : '0 0 15px rgba(99, 102, 241, 0.2)',
+        animation: isLow ? 'blink 1s infinite' : 'none'
       }}
-      onClick={() => {
-        if (confirm('End work session early?')) {
-          localStorage.removeItem('activeWorkSession')
-          window.dispatchEvent(new CustomEvent('workSessionStatusChange'))
-        }
-      }}
-      title="Click to end early"
+      onClick={handleClick}
+      title="Click to manage session"
     >
-      {formatCountdown(remaining)}
+      <svg width="20" height="20" viewBox="0 0 20 20" style={{ flexShrink: 0 }}>
+        <circle 
+          cx="10" cy="10" r="8" 
+          fill="none" 
+          stroke={isPaused ? 'rgba(245, 158, 11, 0.3)' : 'rgba(99, 102, 241, 0.3)'} 
+          strokeWidth="2" 
+        />
+        <circle 
+          cx="10" cy="10" r="8" 
+          fill="none" 
+          stroke={isLow ? '#f87171' : isPaused ? '#f59e0b' : '#818cf8'} 
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeDasharray={`${progressPct * 0.5} 100`}
+          transform="rotate(-90 10 10)"
+          style={{ transition: 'stroke-dasharray 1s linear' }}
+        />
+      </svg>
+      <span style={{ 
+        fontFamily: 'JetBrains Mono, Monaco, monospace',
+        fontSize: 14,
+        fontWeight: 700,
+        color: isLow ? '#f87171' : isPaused ? '#f59e0b' : '#a5b4fc'
+      }}>
+        {isPaused ? 'PAUSED' : formatCountdown(remaining)}
+      </span>
     </div>
   )
 }
-

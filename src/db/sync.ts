@@ -9,12 +9,13 @@ import type { SyncQueueEntry, SyncOperation } from './database'
 import type { Table } from 'dexie'
 
 const dexieTables: Record<string, Table> = {
-  habits:            db.habits,
-  habitLogs:         db.habitLogs,
-  tasks:             db.tasks,
-  exercises:         db.exercises,
-  workoutPlans:      db.workoutPlans,
-  completedWorkouts: db.completedWorkouts,
+  habits:                 db.habits,
+  habitLogs:              db.habitLogs,
+  tasks:                  db.tasks,
+  exercises:             db.exercises,
+  workoutPlans:          db.workoutPlans,
+  completedWorkouts:     db.completedWorkouts,
+  completedWorkSessions: db.completedWorkSessions,
 }
 
 type SyncStatus = 'synced' | 'offline' | 'syncing' | 'error'

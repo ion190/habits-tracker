@@ -1,13 +1,27 @@
-# Fix Work Session Start Button + Add to RightSidebar/Dashboard
+# Current Task
+- [x] Analyze current implementation
+- [x] Get user confirmation on plan
+- [x] Modify ActiveWorkSession.tsx to show modal on natural completion
+- [x] Test both scenarios work correctly (build passes)
 
-## Steps:
-- [x] 1. Update src/pages/WorkSessions.tsx: Add showStartModal state, change "Start session" button to open StartWorkSessionModal instead of ActiveWorkSession directly. Wire onStarted to set localStorage + showActive. Remove localStorage hack modal. Add 'workSessionStatusChange' listener.
+## Implementation Complete ✓
 
-Current: Step 2 Dashboard.tsx.
-- [ ] 2. Update src/pages/Dashboard.tsx: Use existing showStartSession state + add "Start Work Session" button (stats section or header). Add active banner if localStorage has active session. Add event listener.
-- [ ] 3. Update src/components/RightSidebar.tsx: Add activeWorkSession check (mirror workout logic). Show "🧠 Active work session" banner or "🧠 Start work session" button. Trigger modal via localStorage flag.
-- [ ] 4. Minor: App.tsx - Add global listener in DashboardPage for consistent active state (optional).
-- [ ] 5. Test: Run dev server, verify buttons open modal → start session → timer runs → saves to DB. Check RightSidebar/Dashboard banners.
-- [ ] 6. attempt_completion
+Changes made to `src/components/ActiveWorkSession.tsx`:
+- When timer completes naturally: Now shows end modal instead of auto-saving
+- Both "timer completes" and "End Early" use same modal flow
+- User can input distraction time and confirm productivity before saving
 
-Current: Starting step 1.
+## Implementation Details
+
+### Changes to src/components/ActiveWorkSession.tsx:
+
+1. When timer completes naturally (lines 68-124):
+   - REMOVE: Auto-save logic after 3 seconds with default values
+   - REMOVE: onFinished() call in setTimeout
+   - ADD: Set showEndModal(true) to prompt user for data
+
+2. Keep existing confirmEnd() and showEndModal logic which handles:
+   - Distraction time input
+   - Productivity calculation
+   - Task completion status  
+   - Saving to database

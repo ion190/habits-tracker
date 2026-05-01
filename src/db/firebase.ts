@@ -1,12 +1,13 @@
 // src/db/firebase.ts
 import { initializeApp } from 'firebase/app'
 import {
-  getFirestore,
-  enableIndexedDbPersistence,
+  initializeFirestore,
   connectFirestoreEmulator,
   doc,
   setDoc,
   getDoc,
+  persistentLocalCache,
+  type FirestoreSettings,
 } from 'firebase/firestore'
 import {
   getAuth,
@@ -27,17 +28,18 @@ const firebaseConfig = {
   appId:             import.meta.env.VITE_FIREBASE_APP_ID,
 }
 
-const app  = initializeApp(firebaseConfig)
-export const firestore = getFirestore(app)
-export const auth      = getAuth(app)
+const app = initializeApp(firebaseConfig)
 
-enableIndexedDbPersistence(firestore).catch(err => {
-  if (err.code === 'failed-precondition') {
-    console.warn('[Firebase] Offline persistence disabled (multiple tabs)')
-  } else if (err.code === 'unimplemented') {
-    console.warn('[Firebase] This browser does not support offline persistence')
-  }
-})
+// Configure Firestore with IndexedDB local cache using the new persistentLocalCache API.
+// This replaces the deprecated enableIndexedDbPersistence() call.
+// persistentLocalCache() enables offline data persistence, allowing the app to work
+// offline and sync automatically when the network is available again.
+const firestoreSettings = {
+  cache: persistentLocalCache(),
+} as FirestoreSettings
+
+export const firestore = initializeFirestore(app, firestoreSettings)
+export const auth    = getAuth(app)
 
 if (import.meta.env.DEV && import.meta.env.VITE_USE_EMULATOR === 'true') {
   connectFirestoreEmulator(firestore, 'localhost', 8080)

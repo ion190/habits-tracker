@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { db, generateId } from '../db/database'
-import type { ActiveWorkSession, WorkSessionCategory, WorkSessionTaskSnapshot, Task } from '../db/database'
+import type { ActiveWorkSession, WorkSessionTaskSnapshot, Task } from '../db/database'
 
 interface Props {
   onClose: () => void
@@ -8,21 +8,15 @@ interface Props {
 }
 
 export default function StartWorkSessionModal({ onClose, onStarted }: Props) {
-  const [categories, setCategories] = useState<WorkSessionCategory[]>([])
   const [tasks, setTasks] = useState<Task[]>([])
   const [durationMinutes, setDurationMinutes] = useState(25)
-  const [selectedCategory, setSelectedCategory] = useState('')
+  const [categoryName, setCategoryName] = useState('')
   const [selectedTasks, setSelectedTasks] = useState<string[]>([])
   const [notes, setNotes] = useState('')
 
   useEffect(() => {
-    Promise.all([
-      db.workSessionCategories.toArray(),
-      db.tasks.filter(t => !t.completedAt && !t.archivedAt).toArray()
-    ]).then(([cats, ts]) => {
-      setCategories(cats)
+    db.tasks.filter(t => !t.completedAt && !t.archivedAt).toArray().then(ts => {
       setTasks(ts)
-      if (cats.length > 0) setSelectedCategory(cats[0].id)
     })
   }, [])
 
@@ -33,8 +27,8 @@ export default function StartWorkSessionModal({ onClose, onStarted }: Props) {
   }
 
   const startSession = () => {
-    const category = categories.find(c => c.id === selectedCategory)
-    if (!category || durationMinutes <= 0) return
+    const name = categoryName.trim()
+    if (!name || durationMinutes <= 0) return
 
     const selectedTaskSnapshots: WorkSessionTaskSnapshot[] = selectedTasks.map(taskId => {
       const task = tasks.find(t => t.id === taskId)
@@ -43,12 +37,12 @@ export default function StartWorkSessionModal({ onClose, onStarted }: Props) {
         : { taskId, title: 'Unknown', tags: [] }
     })
 
-    const session: ActiveWorkSession = {
+const session: ActiveWorkSession = {
       id: generateId(),
-      categoryId: category.id,
-      categoryName: category.name,
-      categoryColor: category.color,
-      categoryIcon: category.icon,
+      categoryId: generateId(),
+      categoryName: name,
+      categoryColor: 'var(--accent)',
+      categoryIcon: '⚡',
       durationSeconds: durationMinutes * 60,
       notes: notes.trim() || undefined,
       tasks: selectedTaskSnapshots,
@@ -64,24 +58,45 @@ export default function StartWorkSessionModal({ onClose, onStarted }: Props) {
     <div style={{ maxWidth: 500 }}>
       <div className="form-label">
         Duration (minutes)
-        <input
-          type="number"
-          className="field"
-          min="1"
-          max="240"
-          value={durationMinutes}
-          onChange={e => setDurationMinutes(+e.target.value)}
-          style={{ fontSize: 24, textAlign: 'center', fontWeight: 600 }}
-        />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '0 2rem' }}>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => setDurationMinutes(Math.max(5, durationMinutes - 5))}
+            style={{ fontSize: 20, fontWeight: 600, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8 }}
+          >
+            −
+          </button>
+          <input
+            // type="number"
+            className="field"
+            min="5"
+            max="240"
+            value={durationMinutes}
+            onChange={e => setDurationMinutes(Math.max(5, +e.target.value))}
+            style={{ fontSize: 28, textAlign: 'center', fontWeight: 700, width: 80, color: 'var(--accent)', background: 'transparent', border: 'none' }}
+          />
+          <button
+            type="button"
+            className="btn"
+            onClick={() => setDurationMinutes(Math.min(240, durationMinutes + 5))}
+            style={{ fontSize: 20, fontWeight: 600, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8 }}
+          >
+            +
+          </button>
+        </div>
       </div>
 
       <div className="form-label">
         Category
-        <select className="field" value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)}>
-          {categories.map(cat => (
-            <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
-          ))}
-        </select>
+        <input
+          type="text"
+          className="field"
+          value={categoryName}
+          onChange={e => setCategoryName(e.target.value)}
+          placeholder="e.g. Deep Work, Writing, Coding"
+          style={{ fontSize: 16, padding: '12px 16px' }}
+        />
       </div>
 
       <div className="form-label">
@@ -134,7 +149,7 @@ export default function StartWorkSessionModal({ onClose, onStarted }: Props) {
         <button
           className="btn btn-primary"
           onClick={startSession}
-          disabled={!selectedCategory || durationMinutes <= 0}
+          disabled={!categoryName.trim() || durationMinutes <= 0}
         >
           Start Session ({durationMinutes}m)
         </button>

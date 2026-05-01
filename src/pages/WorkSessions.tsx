@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import type { WorkSessionCategory, CompletedWorkSession } from '../db/database'
 import { db } from '../db/database'
 import { sync } from '../db/sync'
@@ -14,7 +15,7 @@ import StartWorkSessionModal from '../components/StartWorkSessionModal'
 function ProductivityCircle({ pct }: { pct: number }) {
   const r = 16
   const circ = 2 * Math.PI * r
-  const color = pct >= 80 ? '#22c55e' : pct >= 50 ? '#f59e0b' : '#ef4444'
+  const color = pct >= 80 ? 'var(--accent)' : pct >= 50 ? 'var(--warning)' : 'var(--danger)'
   return (
     <svg width="44" height="44" viewBox="0 0 44 44" style={{ flexShrink: 0 }}>
       <circle cx="22" cy="22" r={r} fill="none" stroke="var(--border)" strokeWidth="4" />
@@ -117,8 +118,29 @@ function SessionRow({ session, onDetail, onDeleted }: {
 
 type TimeFilter = 'today' | 'week' | 'month' | '3months' | 'year' | 'all'
 
+// Filter out sessions with obviously corrupted data (NaN, Infinity, negative values)
+// Allow sessions with 0 duration or undefined fields (edge cases)
+function isValidSession(s: CompletedWorkSession): boolean {
+  // Only filter out actual bad values: NaN, Infinity, or negative
+  // Let sessions with 0 or undefined pass through - they'll display as "0m" or similar
+  const actual = s.actualDurationSeconds ?? 0
+  const distraction = s.distractionSeconds ?? 0
+  const productivity = s.productivityPct ?? 100
+  
+  if (!Number.isFinite(actual)) return false
+  if (!Number.isFinite(distraction)) return false
+  if (!Number.isFinite(productivity) && productivity !== 0) return false
+  if (actual < 0 || distraction < 0) return false
+  if (productivity < 0) return false
+  
+  return true
+}
+
 function filterSessions(sessions: CompletedWorkSession[], filter: TimeFilter, categoryFilter: string): CompletedWorkSession[] {
-  let filtered = sessions.filter(s => !categoryFilter || s.categoryId === categoryFilter)
+  // First filter by validity (exclude corrupted data like NaN/Infinity)
+  let filtered = sessions.filter(s => isValidSession(s))
+  // Then apply category and time filters
+  filtered = filtered.filter(s => !categoryFilter || s.categoryId === categoryFilter)
   const days: Record<TimeFilter, number> = { today: 1, week: 7, month: 30, '3months': 90, year: 365, all: Infinity }
   const cutoff = new Date()
   cutoff.setDate(cutoff.getDate() - (days[filter] || 365))
@@ -127,11 +149,14 @@ function filterSessions(sessions: CompletedWorkSession[], filter: TimeFilter, ca
 }
 
 export default function WorkSessions() {
+  const navigate = useNavigate()
   const [categories, setCategories] = useState<WorkSessionCategory[]>([])
   const [sessions, setSessions] = useState<CompletedWorkSession[]>([])
   const [loading, setLoading] = useState(true)
   const [showActive, setShowActive] = useState(false)
   const [showStartModal, setShowStartModal] = useState(false)
+  const [showTimeModal, setShowTimeModal] = useState(false)
+  const [showEndModal, setShowEndModal] = useState(false)
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('week')
   const [categoryFilter, setCategoryFilter] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
@@ -148,14 +173,36 @@ export default function WorkSessions() {
     setLoading(false)
   }
 
-  useEffect(() => {
+useEffect(() => {
     reload()
     const handleStatusChange = () => {
       setShowActive(!!localStorage.getItem('activeWorkSession'))
     }
     handleStatusChange()
     window.addEventListener('workSessionStatusChange', handleStatusChange)
-    return () => window.removeEventListener('workSessionStatusChange', handleStatusChange)
+    
+    // Listen for timer click from header - ensure we show active session
+    const handleShowEndModal = () => {
+      if (localStorage.getItem('activeWorkSession')) {
+        setShowActive(true)
+      }
+    }
+    window.addEventListener('showEndWorkSessionModal', handleShowEndModal)
+    
+    // Check for pending modal from overlay
+    const pendingModal = localStorage.getItem('workSessionPendingModal')
+    if (pendingModal === 'time') {
+      setShowTimeModal(true)
+      localStorage.removeItem('workSessionPendingModal')
+    } else if (pendingModal === 'end') {
+      setShowEndModal(true)
+      localStorage.removeItem('workSessionPendingModal')
+    }
+    
+    return () => {
+      window.removeEventListener('workSessionStatusChange', handleStatusChange)
+      window.removeEventListener('showEndWorkSessionModal', handleShowEndModal)
+    }
   }, [])
 
   const filteredSessions = useMemo(() =>
@@ -275,9 +322,12 @@ export default function WorkSessions() {
 
       {showStartModal && (
         <ModalPortal title="Start Work Session" onClose={() => setShowStartModal(false)}>
-          <StartWorkSessionModal
+<StartWorkSessionModal
             onClose={() => setShowStartModal(false)}
-            onStarted={() => { setShowStartModal(false); setShowActive(true) }}
+            onStarted={() => { 
+              setShowStartModal(false); 
+              navigate('/work-sessions', { replace: true }) 
+            }}
           />
         </ModalPortal>
       )}
