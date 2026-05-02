@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { db, generateId } from '../db/database'
+import { db, generateId, dateKeyForPeriod } from '../db/database'
 import type { Habit, HabitLog, CompletedWorkout, Task } from '../db/database'
 import { formatDuration, toDateKey, startOfWeek } from '../utils'
 import { sync } from '../db/sync'
@@ -9,7 +9,7 @@ import HabitValueModal from '../components/HabitValueModal'
 import StartWorkoutModal from '../components/StartWorkoutModal'
 import StartWorkSessionModal from '../components/StartWorkSessionModal'
 import ModalPortal from '../components/ModalPortal'
-import type { CompletedWorkSession, WorkSessionCategory } from '../db/database'
+import type { CompletedWorkSession, WorkSessionCategory, JournalEntry } from '../db/database'
 
 function CompletionCircle({ pct }: { pct: number }) {
   const r = 16; const circ = 2 * Math.PI * r
@@ -85,6 +85,7 @@ export default function Dashboard() {
   const [workSessions, setWorkSessions] = useState<CompletedWorkSession[]>([])
   const [workSessionCategories, setWorkSessionCategories] = useState<WorkSessionCategory[]>([])
   const [activeWorkSession, setActiveWorkSession] = useState<any>(null)
+  const [todayJournal, setTodayJournal] = useState<JournalEntry | null>(null)
 
   const weeklyTarget = parseInt(localStorage.getItem('weeklyWorkoutTarget') ?? '3')
 
@@ -107,6 +108,10 @@ export default function Dashboard() {
     setTasks(t)
     setWorkSessions(ws)
     setWorkSessionCategories(wsc)
+
+    const todayKey = dateKeyForPeriod('daily')
+    const jEntry = await db.journalEntries.filter(e => e.period === 'daily' && e.dateKey === todayKey).first()
+    setTodayJournal(jEntry ?? null)
 
     const thisWeekWorkouts = w.filter((x) => new Date(x.startedAt) >= weekStart)
 
@@ -210,6 +215,13 @@ export default function Dashboard() {
           <p className="stat-label">Habits</p>
           <p className="stat-value">{todayLogs.length}/{habits.length}</p>
           <p className="stat-sub">done today</p>
+        </div>
+        <div className="stat-card">
+          <p className="stat-label">Journal</p>
+          <p className="stat-value">{todayJournal ? '✍️' : '—'}</p>
+          <p className="stat-sub" style={{ color: todayJournal ? '#22c55e' : undefined }}>
+            {todayJournal ? 'written today' : 'not written'}
+          </p>
         </div>
         <div className="stat-card">
           <p className="stat-label">Tasks</p>
@@ -345,4 +357,3 @@ export default function Dashboard() {
     </div>
   )
 }
-

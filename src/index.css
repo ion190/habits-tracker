@@ -1181,6 +1181,13 @@ select.field {
 .hm-3 { background: rgba(34, 197, 94, 0.7); }
 .hm-4 { background: var(--workout-color) }
 
+/* Work-session heatmap: productivity-based color scale */
+.hm-ws-0 { background: var(--border); }
+.hm-ws-1 { background: rgba(239, 68,  68,  0.55); } /* red   — ≤20 % */
+.hm-ws-2 { background: rgba(249, 115, 22,  0.65); } /* orange— 21-50 % */
+.hm-ws-3 { background: rgba(234, 179, 8,   0.70); } /* amber — 51-79 % */
+.hm-ws-4 { background: rgba(34,  197, 94,  0.85); } /* green — 80+ % */
+
 /* Right sidebar */
 .right-sidebar {
   display: none;
@@ -1241,7 +1248,7 @@ select.field {
 
 .active-workout {
   max-width: 720px;
-  margin: 0 auto;
+  margin: 3rem auto;
   padding: 24px;
 }
 
@@ -1718,4 +1725,41 @@ select.field {
   .header-timer { font-size: 2rem; }
   .header-navbar { height: 45px; }
   .app-layout { padding-top: 45px; }
+}
+/* ── Journal heatmap dot ────────────────────────────────── */
+.hm-seg-journal {
+  background: rgba(170, 59, 255, 0.9);
+  border-radius: 2px;
+}
+
+/* ── Calendar page grid ─────────────────────────────────── */
+.cal-grid {
+  background: var(--bg);
+}
+/* ── Sync push button spin animation ────────────────────── */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ── Journal page textarea focus glow ───────────────────── */
+.journal-editor:focus {
+  border-color: var(--accent-border) !important;
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+/* ── Sidebar journal preview truncation ─────────────────── */
+.sidebar-journal-preview {
+  font-size: 11px;
+  opacity: 0.55;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* ── Right sidebar calendar cell hover ──────────────────── */
+.rs-cal-day:hover {
+  background: var(--accent-bg) !important;
+  color: var(--accent) !important;
 }

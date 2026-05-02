@@ -12,6 +12,7 @@ import AuthPage from './pages/AuthPage'
 import WorkoutTimer from './components/WorkoutTimer'
 import WorkSessionTimer from './components/WorkSessionTimer'
 import ActiveWorkSession from './components/ActiveWorkSession'
+import { sync } from './db/sync'
 import { useEffect, lazy, Suspense, useState, useRef } from 'react'
 
 function DashboardPage() {
@@ -24,18 +25,19 @@ function DashboardPage() {
 }
 
 const WorkSessions = lazy(() => import('./pages/WorkSessions'))
+const JournalPage  = lazy(() => import('./pages/JournalPage'))
+const CalendarPage = lazy(() => import('./pages/CalendarPage'))
 
 function ActiveSessionOverlay() {
   const navigate = useNavigate()
   const [hasActiveSession, setHasActiveSession] = useState(false)
   const isInitialMount = useRef(true)
-  const hasRedirected = useRef(false)
-  
+  const hasRedirected  = useRef(false)
+
   useEffect(() => {
     const checkActive = () => {
       const activeSession = localStorage.getItem('activeWorkSession')
       if (activeSession) {
-        // On initial page load with active session, redirect to work sessions page
         if (isInitialMount.current && !hasRedirected.current) {
           hasRedirected.current = true
           navigate('/work-sessions', { replace: true })
@@ -45,74 +47,56 @@ function ActiveSessionOverlay() {
       }
     }
     checkActive()
+    isInitialMount.current = false
     window.addEventListener('workSessionStatusChange', checkActive)
     return () => window.removeEventListener('workSessionStatusChange', checkActive)
   }, [navigate])
-  
+
   useEffect(() => {
-    const handleShowEndModal = () => {
-      if (localStorage.getItem('activeWorkSession')) {
-        setHasActiveSession(true)
-      }
+    const handler = () => {
+      if (localStorage.getItem('activeWorkSession')) setHasActiveSession(true)
     }
-    window.addEventListener('showEndWorkSessionModal', handleShowEndModal)
-    return () => window.removeEventListener('showEndWorkSessionModal', handleShowEndModal)
+    window.addEventListener('showEndWorkSessionModal', handler)
+    return () => window.removeEventListener('showEndWorkSessionModal', handler)
   }, [])
-  
-  const handleSessionFinished = () => {
-    setHasActiveSession(false)
-  }
-  
-  const handleSessionDiscard = () => {
-    setHasActiveSession(false)
-  }
-  
-  const handleShowTime = () => {
-    setHasActiveSession(false)
-    navigate('/work-sessions')
-  }
-  
-  const handleShowEnd = () => {
-    setHasActiveSession(false)
-    navigate('/work-sessions')
-  }
-  
-  const handleBackgroundClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      setHasActiveSession(false)
-    }
-  }
-  
+
   if (!hasActiveSession) return null
-  
+
   return (
-    <div 
+    <div
       style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: 'rgba(0, 0, 0, 0.7)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
+        position: 'fixed', inset: 0,
+        background: 'rgba(0,0,0,0.7)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
         zIndex: 1000,
       }}
-      onClick={handleBackgroundClick}
+      onClick={e => { if (e.target === e.currentTarget) setHasActiveSession(false) }}
     >
       <ActiveWorkSession
-        onFinished={handleSessionFinished}
-        onDiscard={handleSessionDiscard}
-        onShowTime={handleShowTime}
-        onShowEnd={handleShowEnd}
+        onFinished={() => setHasActiveSession(false)}
+        onDiscard={() => setHasActiveSession(false)}
       />
     </div>
   )
 }
 
+const PageFallback = () => <div className="page-loading">Loading…</div>
+
 function AppShell() {
   const { user, loading } = useAuth()
+
+  // ── SYNC ROOT CAUSE FIX ───────────────────────────────
+  // Call sync.init() whenever the authenticated user changes.
+  // Without this, sync.uid is always null → every write is queued
+  // locally forever and never reaches Firestore.
+  useEffect(() => {
+    if (user?.uid) {
+      sync.init(user.uid)
+      sync.hydrate().catch(console.error)
+    } else {
+      sync.reset()
+    }
+  }, [user?.uid])
 
   if (loading) {
     return (
@@ -122,9 +106,7 @@ function AppShell() {
     )
   }
 
-  if (!user) {
-    return <AuthPage />
-  }
+  if (!user) return <AuthPage />
 
   return (
     <div className="app-layout">
@@ -135,19 +117,23 @@ function AppShell() {
       <Sidebar />
       <main className="app-main">
         <Routes>
-          <Route path="/"                     element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard"            element={<DashboardPage />} />
-          <Route path="/habits"               element={<Habits />} />
-          <Route path="/habits/:habitId"      element={<HabitDetail />} />
-          <Route path="/tasks"               element={<Tasks />} />
-          <Route path="/workouts"             element={<Workouts />} />
-          <Route path="/work-sessions"       element={
-            <Suspense fallback={<div className="page-loading">Loading Work Sessions...</div>}>
-              <WorkSessions />
-            </Suspense>
+          <Route path="/"               element={<Navigate to="/dashboard" replace />} />
+          <Route path="/dashboard"      element={<DashboardPage />} />
+          <Route path="/habits"         element={<Habits />} />
+          <Route path="/habits/:habitId" element={<HabitDetail />} />
+          <Route path="/tasks"          element={<Tasks />} />
+          <Route path="/workouts"       element={<Workouts />} />
+          <Route path="/work-sessions"  element={
+            <Suspense fallback={<PageFallback />}><WorkSessions /></Suspense>
           } />
-          <Route path="/settings"           element={<Settings />} />
-          <Route path="*"                   element={<Navigate to="/dashboard" replace />} />
+          <Route path="/journal"        element={
+            <Suspense fallback={<PageFallback />}><JournalPage /></Suspense>
+          } />
+          <Route path="/calendar"       element={
+            <Suspense fallback={<PageFallback />}><CalendarPage /></Suspense>
+          } />
+          <Route path="/settings"       element={<Settings />} />
+          <Route path="*"               element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </main>
       <ActiveSessionOverlay />

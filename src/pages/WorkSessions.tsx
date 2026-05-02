@@ -1,11 +1,9 @@
 import { useEffect, useState, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
 import type { WorkSessionCategory, CompletedWorkSession } from '../db/database'
 import { db } from '../db/database'
 import { sync } from '../db/sync'
 import { formatDuration, formatDateGMT3 } from '../utils'
 import Modal from '../components/Modal'
-import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
 import ActiveWorkSession from '../components/ActiveWorkSession'
 import WorkSessionHeatmap from '../components/WorkSessionHeatmap'
 import { IconPlus } from '../components/Icons'
@@ -27,27 +25,59 @@ function ProductivityCircle({ pct }: { pct: number }) {
   )
 }
 
-function SessionDetailModal({ session, onClose }: { session: CompletedWorkSession; onClose: () => void }) {
+function SessionDetailModal({ session, onClose, onDeleted }: {
+  session: CompletedWorkSession
+  onClose: () => void
+  onDeleted: () => void
+}) {
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const productiveTime = session.actualDurationSeconds * (session.productivityPct / 100)
+  const pctColor = session.productivityPct >= 80 ? 'var(--accent)' : session.productivityPct >= 50 ? 'var(--warning)' : 'var(--danger)'
+
+  const handleDelete = async () => {
+    setDeleting(true)
+    await sync.delete('completedWorkSessions', session.id)
+    onDeleted()
+    onClose()
+  }
+
   return (
     <Modal title={`${session.categoryName} session`} onClose={onClose} width={600}>
-      <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 16 }}>
+      {/* Stats row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
         <ProductivityCircle pct={session.productivityPct} />
-        <div>
+        <div style={{ flex: 1 }}>
           <p className="item-name">{new Date(session.startedAt).toLocaleDateString('en-US', {
             weekday: 'long', month: 'long', day: 'numeric'
           })}</p>
           <p className="item-sub">
             {formatDuration(session.actualDurationSeconds)} actual ·{' '}
-            {formatDuration(productiveTime)} productive ·{' '}
+            <span style={{ color: pctColor }}>{formatDuration(productiveTime)} productive</span> ·{' '}
             {formatDuration(session.distractionSeconds)} distracted
           </p>
         </div>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 400, overflowY: 'auto' }}>
+
+      {/* Duration details */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        {[
+          { label: 'Planned', value: formatDuration(session.plannedDurationSeconds) },
+          { label: 'Actual',  value: formatDuration(session.actualDurationSeconds) },
+          { label: 'Focused', value: formatDuration(productiveTime), color: pctColor },
+          { label: 'Distracted', value: formatDuration(session.distractionSeconds) },
+        ].map(({ label, value, color }) => (
+          <div key={label} style={{ flex: 1, minWidth: 100, background: 'var(--code-bg)', borderRadius: 8, padding: '10px 14px', border: '1px solid var(--border)' }}>
+            <p style={{ margin: 0, fontSize: 11, opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</p>
+            <p style={{ margin: '4px 0 0', fontWeight: 700, color: color ?? 'var(--text-h)' }}>{value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 300, overflowY: 'auto' }}>
         {session.tasks.length > 0 ? (
           <>
-            <h4 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Tasks</h4>
+            <h4 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Tasks ({session.tasks.length})</h4>
             {session.tasks.map((task, i) => (
               <div key={i} style={{ background: 'var(--bg)', padding: 12, borderRadius: 8, border: '1px solid var(--border)' }}>
                 <p style={{ margin: 0, fontWeight: 500 }}>{task.title}</p>
@@ -71,19 +101,37 @@ function SessionDetailModal({ session, onClose }: { session: CompletedWorkSessio
           </div>
         )}
       </div>
+
+      {/* Delete area */}
+      <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+        {!confirmDelete ? (
+          <button className="btn btn-ghost" style={{ color: 'var(--danger)', fontSize: 13 }}
+            onClick={() => setConfirmDelete(true)}>
+            🗑 Delete session
+          </button>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, opacity: 0.8 }}>Permanently delete this session?</span>
+            <button className="btn btn-ghost" onClick={() => setConfirmDelete(false)} disabled={deleting}>Cancel</button>
+            <button className="btn" style={{ background: 'var(--danger)', color: '#fff', padding: '6px 16px', borderRadius: 8 }}
+              onClick={handleDelete} disabled={deleting}>
+              {deleting ? 'Deleting…' : 'Delete'}
+            </button>
+          </div>
+        )}
+      </div>
     </Modal>
   )
 }
 
-function SessionRow({ session, onDetail, onDeleted }: {
+// Clicking a row opens the detail modal directly
+function SessionRow({ session, onDetail }: {
   session: CompletedWorkSession
   onDetail: () => void
-  onDeleted: () => void
 }) {
-  const [open, setOpen] = useState(false)
   return (
     <li>
-      <div className="item-row" style={{ cursor: 'pointer' }} onClick={() => setOpen(!open)}>
+      <div className="item-row" style={{ cursor: 'pointer' }} onClick={onDetail}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
             <span className="habit-dot" style={{ backgroundColor: session.categoryColor }} />
@@ -98,20 +146,6 @@ function SessionRow({ session, onDetail, onDeleted }: {
         </div>
         <ProductivityCircle pct={session.productivityPct} />
       </div>
-      {open && (
-        <div style={{ padding: '12px 12px 12px 20px', borderTop: '1px solid var(--border)' }}>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <button className="btn btn-ghost" style={{ fontSize: 13 }} onClick={onDetail}>Details →</button>
-            <button className="btn btn-ghost danger" style={{ fontSize: 13 }} onClick={async () => {
-              await sync.delete('completedWorkSessions', session.id)
-              onDeleted()  // ← triggers reload in parent
-            }}>Delete</button>
-          </div>
-          <div style={{ marginTop: 12, fontSize: 12, opacity: 0.7 }}>
-            Planned: {formatDuration(session.plannedDurationSeconds)} · Distracted: {formatDuration(session.distractionSeconds)}
-          </div>
-        </div>
-      )}
     </li>
   )
 }
@@ -149,7 +183,6 @@ function filterSessions(sessions: CompletedWorkSession[], filter: TimeFilter, ca
 }
 
 export default function WorkSessions() {
-  const navigate = useNavigate()
   const [categories, setCategories] = useState<WorkSessionCategory[]>([])
   const [sessions, setSessions] = useState<CompletedWorkSession[]>([])
   const [loading, setLoading] = useState(true)
@@ -161,7 +194,6 @@ export default function WorkSessions() {
   const [categoryFilter, setCategoryFilter] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [detailSession, setDetailSession] = useState<CompletedWorkSession | null>(null)
-  const [deleteConfirm, setDeleteConfirm] = useState<CompletedWorkSession | null>(null)
 
   async function reload() {
     const [cats, sess] = await Promise.all([
@@ -276,7 +308,7 @@ useEffect(() => {
 
       <section className="card heatmap-card">
         <h2 className="card-title">Productivity heatmap</h2>
-        <WorkSessionHeatmap sessions={filteredSessions} daysBack={365} />
+        <WorkSessionHeatmap sessions={sessions.filter(s => isValidSession(s))} daysBack={365} />
       </section>
 
       <section className="card">
@@ -295,7 +327,6 @@ useEffect(() => {
                 key={session.id}
                 session={session}
                 onDetail={() => setDetailSession(session)}
-                onDeleted={reload}  // ← wired up now
               />
             ))}
             {filteredSessions.length > 20 && (
@@ -307,26 +338,15 @@ useEffect(() => {
         )}
       </section>
 
-      {detailSession && <SessionDetailModal session={detailSession} onClose={() => setDetailSession(null)} />}
-
-      {deleteConfirm && (
-        <ConfirmDeleteModal
-          title="Delete session"
-          message="Permanently delete this work session?"
-          itemName={`${deleteConfirm.categoryName} - ${formatDateGMT3(deleteConfirm.startedAt)}`}
-          onConfirm={async () => { await sync.delete('completedWorkSessions', deleteConfirm.id); reload(); setDeleteConfirm(null) }}
-          onCancel={() => setDeleteConfirm(null)}
-          isDangerous
-        />
-      )}
+      {detailSession && <SessionDetailModal session={detailSession} onClose={() => setDetailSession(null)} onDeleted={reload} />}
 
       {showStartModal && (
         <ModalPortal title="Start Work Session" onClose={() => setShowStartModal(false)}>
 <StartWorkSessionModal
             onClose={() => setShowStartModal(false)}
-            onStarted={() => { 
-              setShowStartModal(false); 
-              navigate('/work-sessions', { replace: true }) 
+            onStarted={() => {
+              setShowStartModal(false)
+              setShowActive(true)
             }}
           />
         </ModalPortal>

@@ -4,11 +4,11 @@ import { toDateKey } from '../utils'
 import type { CSSProperties } from 'react'
 
 interface DayData {
-  date: string
-  totalSessions: number
+  date:            string
+  totalSessions:   number
   avgProductivity: number
-  titles: string[]
-  colors: string[]
+  titles:          string[]
+  colors:          string[]
 }
 
 interface Props {
@@ -16,32 +16,30 @@ interface Props {
   daysBack: number
 }
 
-function getCls(avgPct: number): string {
-  if (avgPct === 0) return 'hm-0'
-  if (avgPct < 50) return 'hm-1'
-  if (avgPct < 80) return 'hm-3'
-  return 'hm-4'
+// ─── Color scale based on productivity % ─────────────────
+// hm-ws-0  gray  — no sessions
+// hm-ws-1  red   — 0–20 %
+// hm-ws-2  orange— 21–50 %
+// hm-ws-3  amber — 51–79 %
+// hm-ws-4  green — 80–100 %
+function getCls(day: DayData): string {
+  if (day.totalSessions === 0) return 'hm-ws-0'
+  const p = day.avgProductivity
+  if (p <= 20)  return 'hm-ws-1'
+  if (p <= 50)  return 'hm-ws-2'
+  if (p <= 79)  return 'hm-ws-3'
+  return 'hm-ws-4'
 }
 
-function Tooltip({ day, x, y }: {
-  day: DayData
-  x: number
-  y: number
-}) {
+function Tooltip({ day, x, y }: { day: DayData; x: number; y: number }) {
   const style: CSSProperties = {
-    position: 'fixed',
-    left: x + 12,
-    top: y - 12,
-    zIndex: 9999,
-    pointerEvents: 'none',
+    position: 'fixed', left: x + 12, top: y - 12, zIndex: 9999, pointerEvents: 'none',
   }
-
   const dateStr = new Date(day.date + 'T00:00:00').toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   })
+  const pct = Math.round(day.avgProductivity)
+  const pctColor = pct >= 80 ? '#22c55e' : pct >= 50 ? '#f59e0b' : pct > 0 ? '#ef4444' : undefined
 
   return (
     <div className="hm-tooltip" style={style}>
@@ -49,21 +47,16 @@ function Tooltip({ day, x, y }: {
       {day.totalSessions > 0 ? (
         <>
           <p className="hm-tooltip-label">
-            {day.totalSessions} session{day.totalSessions !== 1 ? 's' : ''} • {Math.round(day.avgProductivity)}% avg
+            {day.totalSessions} session{day.totalSessions !== 1 ? 's' : ''} •{' '}
+            <span style={{ color: pctColor, fontWeight: 600 }}>{pct}% productivity</span>
           </p>
           <div className="hm-tooltip-habits">
             {day.titles.slice(0, 3).map((title, i) => (
-              <span 
-                key={i} 
-                className="hm-tooltip-tag" 
-                style={{ 
-                  backgroundColor: day.colors[i % day.colors.length] + '12',
-                  borderColor: day.colors[i % day.colors.length] + '35',
-                  color: day.colors[i % day.colors.length]
-                }}
-              >
-                {title}
-              </span>
+              <span key={i} className="hm-tooltip-tag" style={{
+                backgroundColor: day.colors[i % day.colors.length] + '12',
+                borderColor:     day.colors[i % day.colors.length] + '35',
+                color:           day.colors[i % day.colors.length],
+              }}>{title}</span>
             ))}
             {day.titles.length > 3 && (
               <span className="hm-tooltip-tag" style={{ background: 'var(--border)', color: 'var(--text)' }}>
@@ -80,89 +73,78 @@ function Tooltip({ day, x, y }: {
 }
 
 export default function WorkSessionHeatmap({ sessions, daysBack }: Props) {
-  const [hovered, setHovered] = useState<DayData | null>(null)
+  const [hovered,  setHovered]  = useState<DayData | null>(null)
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const timeout = setTimeout(() => {
-      scrollRef.current?.scrollTo({
-        left: scrollRef.current.scrollWidth,
-        behavior: 'smooth'
-      })
+    const t = setTimeout(() => {
+      scrollRef.current?.scrollTo({ left: scrollRef.current.scrollWidth, behavior: 'smooth' })
     }, 100)
-    return () => clearTimeout(timeout)
+    return () => clearTimeout(t)
   }, [])
 
+  // Build array of date strings covering [earliest session | daysBack ago] → today
   const days = useMemo(() => {
-    let earliestDate: Date
+    let start: Date
     if (sessions.length === 0) {
-      earliestDate = new Date()
-      earliestDate.setDate(earliestDate.getDate() - daysBack)
+      start = new Date(); start.setDate(start.getDate() - daysBack)
     } else {
-      earliestDate = new Date(Math.min(...sessions.map(s => new Date(s.startedAt).getTime())))
-      const daysAgo = Math.floor((Date.now() - earliestDate.getTime()) / (24 * 60 * 60 * 1000))
-      if (daysAgo > daysBack) {
-        earliestDate = new Date()
-        earliestDate.setDate(earliestDate.getDate() - daysBack)
-      }
+      const earliest = new Date(Math.min(...sessions.map(s => new Date(s.startedAt).getTime())))
+      const daysAgo  = Math.floor((Date.now() - earliest.getTime()) / 86_400_000)
+      start = daysAgo > daysBack ? new Date() : earliest
+      if (daysAgo > daysBack) start.setDate(start.getDate() - daysBack)
     }
 
     const arr: string[] = []
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    
-    const current = new Date(earliestDate)
-    current.setHours(0, 0, 0, 0)
-    
-    while (arr.length < daysBack && current <= today) {
-      arr.push(toDateKey(current.toISOString()))
-      current.setDate(current.getDate() + 1)
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    const cur   = new Date(start); cur.setHours(0, 0, 0, 0)
+    while (arr.length < daysBack && cur <= today) {
+      arr.push(toDateKey(cur.toISOString()))
+      cur.setDate(cur.getDate() + 1)
     }
     return arr
   }, [sessions, daysBack])
 
+  // Build day-keyed map with aggregated session data
   const dayMap = useMemo(() => {
     const map = new Map<string, DayData>()
-    for (const dayKey of days) {
-      map.set(dayKey, { date: dayKey, totalSessions: 0, avgProductivity: 0, titles: [], colors: [] })
-    }
+    for (const d of days) map.set(d, { date: d, totalSessions: 0, avgProductivity: 0, titles: [], colors: [] })
 
-for (const session of sessions) {
-      const key = toDateKey(session.startedAt)
+    for (const s of sessions) {
+      const key   = toDateKey(s.startedAt)
       const entry = map.get(key)
-      // Only filter out obviously bad data (NaN, Infinity) - allow 0 duration sessions
-      const actual = session.actualDurationSeconds ?? 0
-      const productivity = session.productivityPct ?? 100
+      const actual      = s.actualDurationSeconds ?? 0
+      const productivity = s.productivityPct ?? 100
       if (entry && actual >= 0 && Number.isFinite(actual) && Number.isFinite(productivity)) {
         entry.totalSessions++
-        entry.titles.push(session.categoryName)
-        entry.colors.push(session.categoryColor)
+        entry.titles.push(s.categoryName)
+        entry.colors.push(s.categoryColor)
+        // Running average
         entry.avgProductivity = (entry.avgProductivity * (entry.totalSessions - 1) + productivity) / entry.totalSessions
       }
     }
-
     return map
   }, [days, sessions])
 
+  // Grid layout
   const firstDayOfWeek = new Date(days[0]).getDay()
-  const pad = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1
+  const pad      = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1
   const totalCols = Math.ceil((pad + days.length) / 7)
 
   const labels = useMemo(() => {
-    const labelArr: Array<{ month: string; col: number }> = []
-    let currentMonth = -1
+    const arr: Array<{ month: string; col: number }> = []
+    let cur = -1
     days.forEach((d, i) => {
-      const date = new Date(d + 'T00:00:00')
-      const m = date.getMonth()
-      if (m !== currentMonth) {
-        currentMonth = m
-        const absPos = pad + i
-        const col = (absPos % 7 === 0) ? Math.floor(absPos / 7) : Math.floor(absPos / 7) + 1
-        labelArr.push({ month: date.toLocaleString('en-US', { month: 'short' }), col })
+      const m = new Date(d + 'T00:00:00').getMonth()
+      if (m !== cur) {
+        cur = m
+        const abs = pad + i
+        const col = abs % 7 === 0 ? Math.floor(abs / 7) : Math.floor(abs / 7) + 1
+        arr.push({ month: new Date(d + 'T00:00:00').toLocaleString('en-US', { month: 'short' }), col })
       }
     })
-    return labelArr
+    return arr
   }, [days, pad])
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
@@ -172,42 +154,27 @@ for (const session of sessions) {
   return (
     <div className="workout-heatmap" style={{ marginTop: 16 }} onMouseMove={handleMouseMove}>
       <div className="hm-scroll" ref={scrollRef}>
-        <div
-          className="hm-grid"
-          style={{
-            gridTemplateColumns: `repeat(${totalCols}, 14px)`,
-            gridTemplateRows: 'auto repeat(7, 14px)',
-            gridAutoFlow: 'unset',
-          }}
-        >
+        <div className="hm-grid" style={{
+          gridTemplateColumns: `repeat(${totalCols}, 14px)`,
+          gridTemplateRows:    'auto repeat(7, 14px)',
+          gridAutoFlow:        'unset',
+        }}>
           {/* Month labels */}
           {Array.from({ length: totalCols }).map((_, col) => {
-            const label = labels.find(l => l.col === col)
+            const lbl = labels.find(l => l.col === col)
             return (
-              <div
-                key={`m${col}`}
-                className="hm-month"
-                style={{
-                  gridRow: 1,
-                  gridColumn: col + 1,
-                  textAlign: 'left',
-                  whiteSpace: 'nowrap',
-                  fontSize: 11,
-                  color: 'var(--text-muted)',
-                }}
-              >
-                {label?.month ?? ''}
+              <div key={`m${col}`} className="hm-month" style={{
+                gridRow: 1, gridColumn: col + 1,
+                textAlign: 'left', whiteSpace: 'nowrap', fontSize: 11, color: 'var(--text-muted)',
+              }}>
+                {lbl?.month ?? ''}
               </div>
             )
           })}
 
           {/* Padding cells */}
           {Array(pad).fill(null).map((_, i) => (
-            <div
-              key={`p${i}`}
-              className="hm-cell hm-empty"
-              style={{ gridRow: i + 2, gridColumn: 1 }}
-            />
+            <div key={`p${i}`} className="hm-cell hm-empty" style={{ gridRow: i + 2, gridColumn: 1 }} />
           ))}
 
           {/* Day cells */}
@@ -218,18 +185,13 @@ for (const session of sessions) {
             return (
               <div
                 key={d}
-                className={`hm-cell ${getCls(day.avgProductivity)}`}
-                style={{ 
-                  gridRow: row, 
-                  gridColumn: col,
-                  cursor: 'pointer',
-                  borderRadius: 3
-                }}
+                className={`hm-cell ${getCls(day)}`}
+                style={{ gridRow: row, gridColumn: col, cursor: 'pointer', borderRadius: 3 }}
                 onMouseEnter={() => setHovered(day)}
                 onMouseLeave={() => setHovered(null)}
                 role="button"
                 tabIndex={0}
-                aria-label={`${d}: ${day.totalSessions} sessions, ${Math.round(day.avgProductivity)}% avg`}
+                aria-label={`${d}: ${day.totalSessions} sessions, ${Math.round(day.avgProductivity)}% productivity`}
               />
             )
           })}
@@ -238,27 +200,14 @@ for (const session of sessions) {
 
       {/* Legend */}
       <div className="hm-legend-row">
-        <div className="hm-legend-item">
-          <div className="hm-legend-dot hm-0" />
-          <span>No sessions</span>
-        </div>
-        <div className="hm-legend-item">
-          <div className="hm-legend-dot hm-1" />
-          <span>50%</span>
-        </div>
-        <div className="hm-legend-item">
-          <div className="hm-legend-dot hm-3" />
-          <span>50-79%</span>
-        </div>
-        <div className="hm-legend-item">
-          <div className="hm-legend-dot hm-4" />
-          <span>80+%</span>
-        </div>
+        <div className="hm-legend-item"><div className="hm-legend-dot hm-ws-0" /><span>None</span></div>
+        <div className="hm-legend-item"><div className="hm-legend-dot hm-ws-1" /><span>≤20%</span></div>
+        <div className="hm-legend-item"><div className="hm-legend-dot hm-ws-2" /><span>21–50%</span></div>
+        <div className="hm-legend-item"><div className="hm-legend-dot hm-ws-3" /><span>51–79%</span></div>
+        <div className="hm-legend-item"><div className="hm-legend-dot hm-ws-4" /><span>80%+</span></div>
       </div>
 
-      {/* Tooltip */}
       {hovered && <Tooltip day={hovered} x={mousePos.x} y={mousePos.y} />}
     </div>
   )
 }
-
