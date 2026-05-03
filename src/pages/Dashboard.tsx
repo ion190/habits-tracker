@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { db, generateId, dateKeyForPeriod } from '../db/database'
-import type { Habit, HabitLog, CompletedWorkout, Task } from '../db/database'
+import type { CalendarActivity, CompletedWorkSession, WorkSessionCategory, JournalEntry, Habit, HabitLog, CompletedWorkout, Task } from '../db/database'
 import { formatDuration, toDateKey, startOfWeek } from '../utils'
 import { sync } from '../db/sync'
 import UnifiedHeatmap from '../components/UnifiedHeatmap'
@@ -9,7 +9,6 @@ import HabitValueModal from '../components/HabitValueModal'
 import StartWorkoutModal from '../components/StartWorkoutModal'
 import StartWorkSessionModal from '../components/StartWorkSessionModal'
 import ModalPortal from '../components/ModalPortal'
-import type { CompletedWorkSession, WorkSessionCategory, JournalEntry } from '../db/database'
 
 function CompletionCircle({ pct }: { pct: number }) {
   const r = 16; const circ = 2 * Math.PI * r
@@ -69,7 +68,7 @@ function WorkoutRow({ w }: { w: CompletedWorkout }) {
 }
 
 export default function Dashboard() {
-  const navigate = useNavigate()   // ← was missing
+  const navigate = useNavigate()
   const [habits, setHabits] = useState<Habit[]>([])
   const [logs, setLogs] = useState<HabitLog[]>([])
   const [workouts, setWorkouts] = useState<CompletedWorkout[]>([])
@@ -80,12 +79,17 @@ export default function Dashboard() {
   const [currentTime, setCurrentTime] = useState(new Date())
   const [valueModalHabit, setValueModalHabit] = useState<Habit | null>(null)
   const [showStartWorkout, setShowStartWorkout] = useState(false)
-  const [showStart, setShowStart] = useState(false)
   const [showStartSession, setShowStartSession] = useState(false)
   const [workSessions, setWorkSessions] = useState<CompletedWorkSession[]>([])
   const [workSessionCategories, setWorkSessionCategories] = useState<WorkSessionCategory[]>([])
-  const [activeWorkSession, setActiveWorkSession] = useState<any>(null)
+  const [activeWorkSession, setActiveWorkSession] = useState(null)
   const [todayJournal, setTodayJournal] = useState<JournalEntry | null>(null)
+  const [activities, setActivities] = useState<CalendarActivity[]>([])
+  const [todaysActivities, setTodaysActivities] = useState<CalendarActivity[]>([])
+  const [todaysFutureActivities, setTodaysFutureActivities] = useState<CalendarActivity[]>([])
+  const [tomorrowActivities, setTomorrowActivities] = useState<CalendarActivity[]>([])
+  const [tomorrowKey, setTomorrowKey] = useState('')
+  const [now, setNow] = useState(new Date())
 
   const weeklyTarget = parseInt(localStorage.getItem('weeklyWorkoutTarget') ?? '3')
 
@@ -94,14 +98,16 @@ export default function Dashboard() {
     const previousWeekStart = new Date(weekStart)
     previousWeekStart.setDate(previousWeekStart.getDate() - 7)
 
-    const [h, l, w, t, ws, wsc] = await Promise.all([
+    const [h, l, w, t, ws, wsc, acts] = await Promise.all([
       db.habits.filter((h) => !h.archivedAt).toArray(),
       db.habitLogs.toArray(),
       db.completedWorkouts.orderBy('startedAt').reverse().toArray(),
       db.tasks.filter((t) => !t.archivedAt).toArray(),
       db.completedWorkSessions.where('startedAt').aboveOrEqual(startOfWeek().toISOString()).toArray(),
       db.workSessionCategories.toArray(),
+      db.calendarActivities.toArray(),
     ])
+    setActivities(acts)
     setHabits(h)
     setLogs(l)
     setAllWorkouts(w)
@@ -109,8 +115,29 @@ export default function Dashboard() {
     setWorkSessions(ws)
     setWorkSessionCategories(wsc)
 
-    const todayKey = dateKeyForPeriod('daily')
-    const jEntry = await db.journalEntries.filter(e => e.period === 'daily' && e.dateKey === todayKey).first()
+    const todayKeyLocal = dateKeyForPeriod('daily')
+    const tomorrowDate = new Date()
+    tomorrowDate.setDate(tomorrowDate.getDate() + 1)
+    const tomorrowKeyLocal = toDateKey(tomorrowDate.toISOString())
+    setTomorrowKey(tomorrowKeyLocal)
+
+    const todaysAll = acts.filter(a => a.date === todayKeyLocal)
+    
+    // Split today's into past/completed vs future
+    const futureTodays = todaysAll.filter(a => {
+      const startDateTime = new Date(todayKeyLocal + 'T' + a.startTime + ':00')
+      return startDateTime > now
+    })
+    const pastTodays = todaysAll.filter(a => {
+      const endDateTime = new Date(todayKeyLocal + 'T' + a.endTime + ':00')
+      return endDateTime < now
+    })
+    
+    const tomorrowActs = acts.filter(a => a.date === tomorrowKeyLocal)
+    setTodaysActivities([...futureTodays, ...pastTodays]) // Future first
+    setTodaysFutureActivities(futureTodays)
+    setTomorrowActivities(tomorrowActs)
+    const jEntry = await db.journalEntries.filter(e => e.period === 'daily' && e.dateKey === todayKeyLocal).first()
     setTodayJournal(jEntry ?? null)
 
     const thisWeekWorkouts = w.filter((x) => new Date(x.startedAt) >= weekStart)
@@ -133,11 +160,14 @@ export default function Dashboard() {
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000)
+    const timer = setInterval(() => {
+      setCurrentTime(new Date())
+      setNow(new Date())
+    }, 1000 * 30) // Update every 30s for activity status
     return () => clearInterval(timer)
   }, [])
 
-  if (loading) return <div className="page-loading">Loading\u2026</div>
+  if (loading) return <div className="page-loading">Loading…</div>
 
   const today = toDateKey(new Date().toISOString())
   const todayLogs = logs.filter((l) => toDateKey(l.completedAt) === today)
@@ -193,9 +223,8 @@ export default function Dashboard() {
 
   return (
     <div className="page">
-<div className="page-header">
+      <div className="page-header">
         <h1>Dashboard</h1>
-      
         <div className="header-time">
           <p className="page-sub">
             {currentTime.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
@@ -235,43 +264,59 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* <section className="card">
-        <h2 className="card-title">Weekly workout goal: {weekWorkouts.length}/{weeklyTarget}</h2>
-        <div className="quota-bar-track">
-        <div
-            className="quota-bar-fill"
-            style={{
-              width: `${Math.min(100, Math.round((weekWorkouts.length / weeklyTarget) * 100))}%`,
-              background: weekWorkouts.length >= weeklyTarget ? '#22c55e' : 'var(--accent)',
-            }}
-          />
+      <section className="card">
+        <h2 className="card-title">Today's Activities</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12 }}>
+          {todaysActivities.length === 0 ? (
+            <>
+              <p className="empty-hint" style={{ marginBottom: 12 }}>No activities planned today</p>
+              {tomorrowActivities.length > 0 && (
+                <>
+                  <p style={{ fontSize: 13, color: 'var(--text-dim)', marginBottom: 8, fontWeight: 500 }}>Tomorrow</p>
+                  {tomorrowActivities.map((a) => (
+                    <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 8, background: 'var(--card-bg)', borderRadius: 8 }}>
+                      <span className="habit-dot-sm" style={{ background: a.color || '#3b82f6' }} />
+                      <div style={{ flex: 1 }}>
+                        <span style={{ fontWeight: 500 }}>{a.title}</span>
+                        <span style={{ color: 'var(--text-dim)', fontSize: 13 }}> {a.startTime}–{a.endTime}</span>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </>
+          ) : (
+            todaysActivities.map((a) => (
+              <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 8, background: 'var(--card-bg)', borderRadius: 8 }}>
+                <span className="habit-dot-sm" style={{ background: a.color || '#3b82f6' }} />
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontWeight: 500 }}>{a.title}</span>
+                  <span style={{ color: 'var(--text-dim)', fontSize: 13 }}> {a.startTime}–{a.endTime}</span>
+                </div>
+              </div>
+            ))
+          )}
         </div>
-      </section> */}
-
-      <section className="card habit-quick-card">
-        <h2 className="card-title">Today's habits</h2>
-        {habits.length === 0 ? (
-          <p className="empty-hint">No habits yet.</p>
-        ) : (
-          <div className="habit-quick-row">
-            {habits.map((h) => {
-              const done = logs.some((l) => l.habitId === h.id && toDateKey(l.completedAt) === today)
-              return (
-                <button
-                  key={h.id}
-                  className={`habit-quick-pill ${done ? 'done' : ''}`}
-                  onClick={() => handleHabitClick(h.id)}
-                  title={h.name}
-                >
-                  <span className="habit-dot-sm" style={{ background: h.color }} />
-                  <span className="habit-quick-name">{h.name}</span>
-                  <span className="habit-quick-check">{done ? '\u2713' : '\u25cb'}</span>
-                </button>
-              )
-            })}
-          </div>
-        )}
       </section>
+
+      {todaysTasks.length > 0 && (
+        <section className="card">
+          <h2 className="card-title">Today's Tasks</h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12 }}>
+            {todaysTasks.map((task) => (
+              <div key={task.id} style={{ padding: 8, background: 'var(--card-bg)', borderRadius: 8, cursor: 'pointer' }} 
+                   onClick={() => navigate('/tasks?taskId=' + task.id)}>
+                <span style={{ fontWeight: 500 }}>{task.title}</span>
+                {task.tags.length > 0 && (
+                  <span style={{ fontSize: 12, color: 'var(--text-dim)', marginLeft: 8 }}>
+                    {task.tags.map(t => '#' + t).join(' ')}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {valueModalHabit && (
         <HabitValueModal
@@ -330,7 +375,7 @@ export default function Dashboard() {
 
       <section className="card">
         <h2 className="card-title">
-          {workoutsFromPreviousWeek ? "Last week\u2019s workouts" : "This week\u2019s workouts"}
+          {workoutsFromPreviousWeek ? "Last week's workouts" : "This week's workouts"}
         </h2>
         {workouts.length === 0 ? (
           <p className="empty-hint">No workouts this week yet.</p>
@@ -352,3 +397,4 @@ export default function Dashboard() {
     </div>
   )
 }
+

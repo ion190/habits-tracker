@@ -7,7 +7,8 @@ import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
 import HabitValueModal from '../components/HabitValueModal'
 import HabitHeatmap from '../components/HabitHeatmap'
 import { IconPlus, IconTrash, IconCheck, IconArchive } from '../components/Icons'
-import { toDateKey } from '../utils'
+import { toDateKey, getPastTags } from '../utils'
+import TagSuggestions from '../components/TagSuggestions'
 
 const COLORS = [
   '#aa3bff','#3b82f6','#22c55e','#f59e0b',
@@ -31,8 +32,13 @@ function HabitModal({
   const [targetDays, setTargetDays] = useState<number[]>(initial?.targetDays ?? [1,2,3,4,5])
   const [tags,       setTags]       = useState<string[]>(initial?.tags ?? [])
   const [tagInput,   setTagInput]   = useState('')
+  const [pastTags, setPastTags] = useState<string[]>([])
 
   const [hasQuota,   setHasQuota]   = useState(!!initial?.quota)
+
+  useEffect(() => {
+    getPastTags('habit').then(setPastTags)
+  }, [])
   const [quotaType,  setQuotaType]  = useState<'quantity' | 'time'>(initial?.quota?.type ?? 'quantity')
   const [quotaTarget, setQuotaTarget] = useState<number>(initial?.quota?.target ?? 1)
   const [quotaUnit,  setQuotaUnit]  = useState(initial?.quota?.unit ?? '')
@@ -51,9 +57,7 @@ function HabitModal({
     }
   }
 
-  function removeTag(tag: string) {
-    setTags(tags.filter(t => t !== tag))
-  }
+
 
   function submit() {
     if (!name.trim()) return
@@ -182,7 +186,13 @@ function HabitModal({
 
         <div className="form-label">
           Tags
-          {/* Note: HabitModal is embedded, so pastTags loaded in parent Habits page useEffect */}
+          <TagSuggestions
+            pastTags={pastTags}
+            currentTags={tags}
+            onChange={setTags}
+            inputValue={tagInput}
+            onInputChange={setTagInput}
+          />
         </div>
 
         <div className="form-actions">

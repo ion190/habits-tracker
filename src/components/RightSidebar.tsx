@@ -7,13 +7,14 @@ import type { Habit, HabitLog, Task, CalendarActivity, JournalEntry } from '../d
 import { toDateKey, startOfWeek } from '../utils'
 import { sync } from '../db/sync'
 import ModalPortal from './ModalPortal'
+import HabitValueModal from './HabitValueModal'
 
 interface Props {
   onDataChange?: () => void
 }
 
 // ── Tiny mini-calendar ────────────────────────────────────
-function SidebarCalendar({ onDayClick }: { onDayClick: (date: string) => void }) {
+function SidebarCalendar({ activities, onDayClick }: { activities: CalendarActivity[], onDayClick: (date: string) => void }) {
   const [viewDate, setViewDate] = useState(new Date())
   const today   = toDateKey(new Date().toISOString())
   const year    = viewDate.getFullYear()
@@ -42,14 +43,23 @@ function SidebarCalendar({ onDayClick }: { onDayClick: (date: string) => void })
           const day = i + 1
           const key = `${year}-${String(month + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`
           const isToday = key === today
+          const hasActivity = activities.some(a => a.date === key)
           return (
             <div key={key} onClick={() => onDayClick(key)} style={{
-              padding: '3px 1px', borderRadius: 5, fontSize: 11,
+              padding: '3px 1px 8px', borderRadius: 5, fontSize: 11, position: 'relative',
               background: isToday ? 'var(--accent)' : 'transparent',
               color: isToday ? '#fff' : 'var(--text)',
               fontWeight: isToday ? 700 : 400,
               cursor: 'pointer',
-            }}>{day}</div>
+            }}>
+              {day}
+              {hasActivity && (
+                <div style={{
+                  position: 'absolute', bottom: 0, left: '50%', transform: 'translateX(-50%)',
+                  width: 4, height: 4, background: 'var(--accent)', borderRadius: '50%',
+                }} />
+              )}
+            </div>
           )
         })}
       </div>
@@ -139,8 +149,10 @@ export default function RightSidebar({ onDataChange }: Props) {
   const [activeExists,        setActiveExists]        = useState(false)
   const [activeSessionExists, setActiveSessionExists] = useState(false)
   const [activities,          setActivities]          = useState<CalendarActivity[]>([])
+  const [todaysActivities,    setTodaysActivities]    = useState<CalendarActivity[]>([])
   const [journals,            setJournals]            = useState<Map<string, JournalEntry>>(new Map())
   const [popupDate,           setPopupDate]           = useState<string | null>(null)
+  const [valueModalHabit,     setValueModalHabit]     = useState<Habit | null>(null)
 
 
   async function load() {
@@ -158,9 +170,57 @@ export default function RightSidebar({ onDataChange }: Props) {
     setActiveExists(!!localStorage.getItem('activeWorkout'))
     setActiveSessionExists(!!localStorage.getItem('activeWorkSession'))
     setActivities(acts)
+    
+    const todayKey = toDateKey(new Date().toISOString())
+    const todaysActs = acts.filter(a => a.date === todayKey)
+    setTodaysActivities(todaysActs)
+    
     const map = new Map<string, JournalEntry>()
     js.forEach(j => map.set(j.dateKey, j))
     setJournals(map)
+  }
+
+  const todayKeyForHabit = toDateKey(new Date().toISOString())
+  const todayLogs = logs.filter(l => toDateKey(l.completedAt) === todayKeyForHabit)
+
+  const toggleHabit = async (habitId: string, value?: number) => {
+    const existing = logs.find(l => l.habitId === habitId && toDateKey(l.completedAt) === todayKeyForHabit)
+    if (existing) {
+      await sync.delete('habitLogs', existing.id)
+    } else {
+      const log: HabitLog = {
+        id: generateId(),
+        habitId,
+        completedAt: new Date().toISOString(),
+        value,
+      }
+      await sync.put('habitLogs', log as unknown as Record<string, unknown>)
+    }
+    load()
+    onDataChange?.()
+  }
+
+  const handleHabitClick = (habitId: string) => {
+    const habit = habits.find(h => h.id === habitId)
+    if (!habit) return
+
+    const existing = logs.find(l => l.habitId === habitId && toDateKey(l.completedAt) === todayKeyForHabit)
+    if (existing) {
+      toggleHabit(habitId)
+      return
+    }
+
+    if (habit.quota) {
+      setValueModalHabit(habit)
+    } else {
+      toggleHabit(habitId)
+    }
+  }
+
+  const handleValueSave = (value: number) => {
+    if (!valueModalHabit) return
+    toggleHabit(valueModalHabit.id, value)
+    setValueModalHabit(null)
   }
 
   useEffect(() => {
@@ -174,19 +234,7 @@ export default function RightSidebar({ onDataChange }: Props) {
     }
   }, [])
 
-  const today = toDateKey(new Date().toISOString())
-  const todayLogs = logs.filter(l => toDateKey(l.completedAt) === today)
 
-  async function toggleHabit(habitId: string) {
-    const existing = logs.find(l => l.habitId === habitId && toDateKey(l.completedAt) === today)
-    if (existing) {
-      await sync.delete('habitLogs', existing.id)
-    } else {
-      const log: HabitLog = { id: generateId(), habitId, completedAt: new Date().toISOString() }
-      await sync.put('habitLogs', log as unknown as Record<string, unknown>)
-    }
-    load(); onDataChange?.()
-  }
 
   const handleDayClick = (date: string) => {
     setPopupDate(prev => prev === date ? null : date)
@@ -206,36 +254,48 @@ export default function RightSidebar({ onDataChange }: Props) {
           onClick={() => setShowStartSession(true)}>
           ⏱️ Start work session
         </button>
-      )}
-
-      {/* Today habits */}
-      <div className="rs-card">
-        <p className="rs-label">Today's habits</p>
-        <p className="rs-big">{todayLogs.length}/{habits.length}</p>
-        <div style={{ display:'flex', flexDirection:'column', gap:4, marginTop:8 }}>
-          {habits.map(h => {
-            const done = logs.some(l => l.habitId === h.id && toDateKey(l.completedAt) === today)
-            return (
-              <div key={h.id}
-                style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer', padding:4, borderRadius:6, transition:'background 0.2s' }}
-                onClick={() => toggleHabit(h.id)}
-                onMouseEnter={e => e.currentTarget.style.background = 'var(--border)'}
-                onMouseLeave={e => e.currentTarget.style.background = ''}
-              >
-                <span style={{ width:8, height:8, borderRadius:'50%', background:h.color, flexShrink:0 }} />
-                <span style={{ fontSize:12.5, color: done ? 'var(--text)' : 'var(--text-h)', textDecoration: done ? 'line-through' : 'none', flex:1 }}>{h.name}</span>
-                <span style={{ fontSize:11, color: done ? '#22c55e' : 'var(--border)' }}>{done ? '✓' : '○'}</span>
-              </div>
-            )
-          })}
-          {habits.length === 0 && <p className="item-sub" style={{ textAlign:'center', padding:8 }}>No habits yet</p>}
-        </div>
-      </div>
-
-      {/* Mini calendar */}
-      <div className="rs-card" style={{ position: 'relative' }}>
+        )}
+ 
+       {/* Habits quick log */}
+       <div className="rs-card">
+         <p className="rs-label">Habits today</p>
+         <p className="rs-big">{todayLogs.length}/{habits.length}</p>
+         <div style={{ display:'flex', flexDirection:'column', gap:6, marginTop:6 }}>
+           {habits.map(h => {
+             const isDone = todayLogs.some(l => l.habitId === h.id && toDateKey(l.completedAt) === todayKeyForHabit)
+             return (
+        <div 
+                    key={h.id} 
+                    style={{ 
+                      display:'flex', 
+                      alignItems:'center', 
+                      gap:8, 
+                      padding:6, 
+                      borderRadius:6, 
+                      cursor:'pointer',
+                      background: isDone ? 'rgba(34,197,94,0.1)' : 'transparent' 
+                    }}
+                    onClick={() => handleHabitClick(h.id)}>
+                 <span className="habit-dot-sm" style={{ background: h.color }} />
+                 <span style={{ flex:1, fontSize:12.5 }}>{h.name}</span>
+                 <button style={{
+                   width:24, height:24, borderRadius:'50%', border:'1px solid var(--border)',
+                   background: isDone ? '#22c55e' : 'transparent',
+                   color: isDone ? 'white' : 'var(--text-dim)', fontSize:16, fontWeight:'bold',
+                   cursor:'pointer'
+                 }} onClick={e => { e.stopPropagation(); handleHabitClick(h.id) }}>
+                   {isDone ? '✓' : '○'}
+                 </button>
+               </div>
+             )
+           })}
+         </div>
+       </div>
+ 
+       {/* Mini calendar */}
+       <div className="rs-card" style={{ position: 'relative' }}>
         <p className="rs-label" style={{ marginBottom: 8 }}>Calendar</p>
-        <SidebarCalendar onDayClick={handleDayClick} />
+<SidebarCalendar activities={activities} onDayClick={handleDayClick} />
         {popupDate && (
           <DayPopup
             date={popupDate}
@@ -300,6 +360,17 @@ export default function RightSidebar({ onDataChange }: Props) {
           onClose={() => setShowStart(false)}
           onStarted={() => { setShowStart(false); navigate('/workouts', { replace: true }) }}
         />
+      )}
+{valueModalHabit && (
+        <ModalPortal title="Log habit value" onClose={() => setValueModalHabit(null)}>
+          <HabitValueModal
+            habitName={valueModalHabit.name}
+            quotaType={valueModalHabit.quota!.type}
+            unit={valueModalHabit.quota!.unit}
+            onSave={handleValueSave}
+            onClose={() => setValueModalHabit(null)}
+          />
+        </ModalPortal>
       )}
     </aside>
   )

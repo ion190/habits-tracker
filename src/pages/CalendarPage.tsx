@@ -2,7 +2,6 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { db, generateId } from '../db/database'
 import type { CalendarActivity, Task, JournalEntry } from '../db/database'
 import { sync } from '../db/sync'
-import { dateKeyForPeriod } from '../db/database'
 
 // ── Helpers ───────────────────────────────────────────────
 function toDateKey(d: Date) { return d.toISOString().slice(0, 10) }
@@ -16,9 +15,7 @@ function minutesToTime(m: number) {
   return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`
 }
 function fmtTime(t: string) {
-  const [h, m] = t.split(':').map(Number)
-  const ampm = h >= 12 ? 'PM' : 'AM'
-  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ampm}`
+  return t.padStart(5, '0')
 }
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
@@ -229,9 +226,15 @@ export default function CalendarPage() {
   const [showForm,     setShowForm]             = useState(false)
   const [editActivity, setEditActivity]         = useState<CalendarActivity | undefined>()
   const [newStartTime, setNewStartTime]         = useState('09:00')
+  const [newEndTime, setNewEndTime] = useState('10:00')
   const [showDayTip,   setShowDayTip]           = useState(false)
   const [quickTaskDate, setQuickTaskDate]       = useState<string | null>(null)
   const [quickTaskTitle, setQuickTaskTitle]     = useState('')
+  const [isSelecting, setIsSelecting] = useState(false)
+  const [selection, setSelection] = useState<{startY: number, currentY: number} | null>(null)
+  const [tempStartMin, setTempStartMin] = useState<number | null>(null)
+  const [tempEndMin, setTempEndMin] = useState<number | null>(null)
+  const [isMobile, setIsMobile] = useState(false)
   const scrollRef   = useRef<HTMLDivElement>(null)
   const dragRef     = useRef<{ id: string; offsetMin: number } | null>(null)
   const resizeRef   = useRef<{ id: string; field: 'start' | 'end' } | null>(null)
@@ -251,22 +254,27 @@ export default function CalendarPage() {
 
   useEffect(() => {
     load()
+  }, [selectedDate])
+
+  useEffect(() => {
     // Scroll to 7am on mount
-    setTimeout(() => {
+    const timeout = setTimeout(() => {
       scrollRef.current?.scrollTo({ top: 7 * SLOT_H, behavior: 'smooth' })
     }, 100)
-  }, [load])
+    return () => clearTimeout(timeout)
+  }, [])
 
-  const saveActivity = async (a: CalendarActivity) => {
-    await sync.put('calendarActivities', a as unknown as Record<string, unknown>)
+    const saveActivity = async (a: CalendarActivity) => {
+    const record = { ...a, id: a.id || generateId() }
+    await sync.put('calendarActivities', record as unknown as Record<string, unknown>)
     setActivities(prev => {
-      const idx = prev.findIndex(x => x.id === a.id)
-      return idx >= 0 ? prev.map(x => x.id === a.id ? a : x) : [...prev, a]
+      const idx = prev.findIndex(x => x.id === record.id)
+      return idx >= 0 ? prev.map(x => x.id === record.id ? record : x) : [...prev, record]
     })
     setShowForm(false); setEditActivity(undefined)
   }
 
-  const deleteActivity = async (id: string) => {
+    const deleteActivity = async (id: string) => {
     await sync.delete('calendarActivities', id)
     setActivities(prev => prev.filter(a => a.id !== id))
     setShowForm(false); setEditActivity(undefined)
@@ -284,17 +292,45 @@ export default function CalendarPage() {
     setQuickTaskTitle(''); setQuickTaskDate(null)
   }
 
-  // ── Grid click: open form at that hour ───────────────────
-  const handleGridClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (dragRef.current || resizeRef.current) return
+  // ── Drag rectangle selection ──────────────────────────────
+  const handleGridMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (dragRef.current || resizeRef.current || e.button !== 0) return
+
     const rect = e.currentTarget.getBoundingClientRect()
-    const y    = e.clientY - rect.top
-    const mins = Math.round((y / SLOT_H) * 60 / 15) * 15
-    const startM = Math.min(mins, 23 * 60 + 30)
-    setNewStartTime(minutesToTime(startM))
+    const startY = e.clientY - rect.top
+    setTempStartMin(Math.round((startY / SLOT_H) * 4) * 15) // snap 15min
+    setSelection({ startY, currentY: startY })
+    setIsSelecting(true)
+    e.preventDefault()
+  }
+
+  const handleGridMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isSelecting || !selection || tempStartMin === null) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const currentY = e.clientY - rect.top
+    setSelection({ ...selection, currentY })
+    const rawEndMin = Math.round((currentY / SLOT_H) * 4) * 15
+    setTempEndMin(Math.max(tempStartMin + 15, Math.min(24*60 - 15, rawEndMin)))
+  }
+
+    const handleGridMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isSelecting || !selection || tempStartMin === null) return
+
+    setIsSelecting(false)
+    setSelection(null)
+    setTempStartMin(null)
+    setTempEndMin(null)
+
+    const startMin = tempStartMin!
+    const endMin = tempEndMin ?? Math.max(startMin + 15, Math.min(24*60 - 15, Math.round((e.clientY - e.currentTarget.getBoundingClientRect().top) / SLOT_H * 4) * 15))
+
+    setNewStartTime(minutesToTime(startMin))
+    setNewEndTime(minutesToTime(endMin))
     setEditActivity(undefined)
     setShowForm(true)
   }
+
+  // ── Single click fallback (right-click or modifier?) - keep old logic as fallback if needed
 
   // ── Drag to move ─────────────────────────────────────────
   const startDrag = (e: React.MouseEvent, a: CalendarActivity) => {
@@ -327,7 +363,6 @@ export default function CalendarPage() {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
       // persist final position
-      const final = activities.find(x => x.id === a.id)
       // Use latest from state via ref trick — just re-read from db and save back
       setActivities(prev => {
         const act = prev.find(x => x.id === a.id)
@@ -374,8 +409,22 @@ export default function CalendarPage() {
   const todayJournal = journals.get(selectedDate)
   const todayTasks   = tasks.filter(t => t.dueDate?.slice(0, 10) === selectedDate)
 
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 800)
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
   return (
-    <div className="page" style={{ display: 'flex', gap: 20, height: 'calc(100vh - 60px)', overflow: 'hidden', padding: '16px 20px' }}>
+    <div className="page" style={{ 
+      display: 'flex', 
+      flexDirection: isMobile ? 'column' : 'row',
+      gap: 20, 
+      height: 'calc(100vh - 60px)', 
+      overflow: 'hidden', 
+      padding: '16px 20px' 
+    }}>
 
       {/* Left panel */}
       <div style={{ width: 230, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto' }}>
@@ -497,11 +546,20 @@ export default function CalendarPage() {
         <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', position: 'relative' }}>
           <div
             className="cal-grid"
-            onClick={handleGridClick}
+            onMouseDown={handleGridMouseDown}
+            onMouseMove={handleGridMouseMove}
+            onMouseUp={handleGridMouseUp}
+            onMouseLeave={(e) => {
+              if (isSelecting && tempStartMin !== null) {
+                setIsSelecting(false)
+                setSelection(null)
+                setTempStartMin(null)
+              }
+            }}
             style={{
               position: 'relative',
               height: SLOT_H * 24,
-              cursor: 'crosshair',
+              cursor: isSelecting ? 'grabbing' : 'crosshair',
             }}
           >
             {/* Hour lines */}
@@ -533,6 +591,35 @@ export default function CalendarPage() {
               }} />
             ))}
 
+            {/* Selection rectangle */}
+            {isSelecting && tempStartMin !== null && tempEndMin !== null && (
+              <div style={{
+                position: 'absolute', left: 44, right: 0,
+                top: (tempStartMin / 60) * SLOT_H,
+                height: ((tempEndMin - tempStartMin) / 60) * SLOT_H,
+                background: 'var(--accent)22',
+                border: '2px solid var(--accent)',
+                borderLeft: '4px solid var(--accent)',
+                borderRadius: 8,
+                boxShadow: '0 4px 20px var(--accent)22',
+                zIndex: 20,
+                pointerEvents: 'none',
+                transition: 'all 0.1s ease',
+              }} />
+            )}
+            {/* Snap preview line */}
+            {isSelecting && tempEndMin !== null && tempStartMin !== null && (
+              <div style={{
+                position: 'absolute', left: 44, right: 0,
+                top: (tempEndMin / 60) * SLOT_H - 1,
+                height: 2,
+                background: 'var(--accent)',
+                boxShadow: '0 0 8px var(--accent)44',
+                zIndex: 21,
+                pointerEvents: 'none',
+              }} />
+            )}
+
             {/* Current time indicator */}
             {selectedDate === toDateKey(new Date()) && (() => {
               const now = new Date()
@@ -551,10 +638,12 @@ export default function CalendarPage() {
             })()}
 
             {/* Activities */}
-            {activities.map(a => {
+            {activities.map((a, idx) => {
               const top      = (timeToMinutes(a.startTime) / 60) * SLOT_H
-              const height   = Math.max(28, ((timeToMinutes(a.endTime) - timeToMinutes(a.startTime)) / 60) * SLOT_H)
+              const height   = Math.max(32, ((timeToMinutes(a.endTime) - timeToMinutes(a.startTime)) / 60) * SLOT_H)
               const dur      = timeToMinutes(a.endTime) - timeToMinutes(a.startTime)
+              const color = a.color.replace('ff', 'ee') // lighter for gradient
+              const gradient = `linear-gradient(135deg, ${a.color}dd 0%, ${color}88 100%)`
               return (
                 <div
                   key={a.id}
@@ -562,31 +651,35 @@ export default function CalendarPage() {
                   onClick={e => { e.stopPropagation(); setEditActivity(a); setShowForm(true) }}
                   style={{
                     position: 'absolute', left: 52, right: 8, top, height,
-                    background: a.color + 'dd',
-                    borderLeft: `3px solid ${a.color}`,
-                    borderRadius: 7, padding: '4px 8px',
+                    background: gradient,
+                    borderLeft: `4px solid ${a.color}`,
+                    borderRadius: 12, padding: '6px 10px',
                     cursor: 'grab', overflow: 'hidden',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-                    zIndex: 5, userSelect: 'none',
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.2)',
+                    zIndex: 10 + idx, userSelect: 'none',
+                    transition: 'all 0.2s ease'
                   }}
+                  title={`${a.title}\n${fmtTime(a.startTime)} - ${fmtTime(a.endTime)} (${Math.round(dur/60)}h)`}
                 >
-                  <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: '#fff', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#fff', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {a.title}
                   </p>
-                  {height > 38 && (
-                    <p style={{ margin: 0, fontSize: 11, color: '#fff', opacity: 0.85 }}>
-                      {fmtTime(a.startTime)} – {fmtTime(a.endTime)} {dur >= 60 ? `(${Math.round(dur / 60)}h${dur % 60 ? `${dur % 60}m` : ''})` : `(${dur}m)`}
+                  <p style={{ margin: '2px 0 0 0', fontSize: 11, color: 'rgba(255,255,255,0.9)', opacity: 0.9 }}>
+                    {fmtTime(a.startTime)} – {fmtTime(a.endTime)}
+                    <span style={{ opacity: 0.7, fontSize: 10 }}> ({Math.round(dur/60)}h)</span>
+                  </p>
+                  {a.category && (
+                    <p style={{ margin: '2px 0 0 0', fontSize: 10, color: 'rgba(255,255,255,0.8)', opacity: 0.8 }}>
+                      {a.category}
                     </p>
-                  )}
-                  {a.category && height > 54 && (
-                    <p style={{ margin: '2px 0 0', fontSize: 10, color: '#fff', opacity: 0.7 }}>{a.category}</p>
                   )}
                   {/* Resize handle */}
                   <div
                     onMouseDown={e => { e.stopPropagation(); startResize(e, a) }}
                     style={{
-                      position: 'absolute', bottom: 0, left: 0, right: 0, height: 8,
-                      cursor: 'ns-resize', background: 'transparent',
+                      position: 'absolute', bottom: 0, left: 0, right: 0, height: 6,
+                      background: 'rgba(255,255,255,0.2)', cursor: 'ns-resize',
+                      borderRadius: '0 0 10px 10px',
                     }}
                   />
                 </div>
@@ -597,31 +690,35 @@ export default function CalendarPage() {
       </div>
 
       {/* Activity form panel */}
-      {showForm && (
+{showForm && (
         <div style={{
-          width: 300, flexShrink: 0, background: 'var(--code-bg)',
-          border: '1px solid var(--border)', borderRadius: 14, padding: 20,
-          overflowY: 'auto',
+          position: 'fixed', top: 80, right: 20, zIndex: 1000,
+          width: 320, maxHeight: 'calc(100vh - 120px)',
+          background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 14, 
+          padding: 20, boxShadow: 'var(--shadow-xl)', overflowY: 'auto',
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <h3 style={{ margin: 0, fontSize: 15 }}>{editActivity ? 'Edit Activity' : 'New Activity'}</h3>
             <button className="btn btn-ghost" style={{ padding: '2px 8px', fontSize: 18 }}
               onClick={() => { setShowForm(false); setEditActivity(undefined) }}>×</button>
           </div>
-          <ActivityForm
+        <ActivityForm
             date={selectedDate}
             activity={editActivity
               ? editActivity
-              : { id: '', title: '', date: selectedDate, startTime: newStartTime,
-                  endTime: minutesToTime(timeToMinutes(newStartTime) + 60),
+              : { id: '', title: '', date: selectedDate, startTime: newStartTime, endTime: newEndTime,
                   color: COLORS[0], createdAt: '' }
             }
             onSave={saveActivity}
             onCancel={() => { setShowForm(false); setEditActivity(undefined) }}
             onDelete={editActivity ? () => deleteActivity(editActivity.id) : undefined}
           />
+          <p style={{ fontSize: 12, opacity: 0.6, marginTop: 8 }}>
+            Duration: {Math.round((timeToMinutes(newEndTime || '10:00') - timeToMinutes(newStartTime)) / 60)}h
+          </p>
         </div>
       )}
     </div>
   )
 }
+

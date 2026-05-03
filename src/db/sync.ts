@@ -160,9 +160,13 @@ class SyncEngine {
       try {
         const snap    = await getDocs(collection(firestore, 'users', this.uid, table))
         const records = snap.docs.map(d => d.data())
-        if (records.length > 0) await dexieTables[table].bulkPut(records as never[])
+        if (records.length > 0) {
+          await dexieTables[table].bulkPut(records as never[])
+        } else {
+          console.log(`[Sync] No data found for ${table}`)
+        }
       } catch (e) {
-        console.warn(`[Sync] Could not hydrate ${table}:`, e)
+        console.warn(`[Sync] Skipping empty/missing collection ${table}:`, e)
       }
     }
     console.log('[Sync] Hydration complete')
@@ -182,7 +186,7 @@ class SyncEngine {
 
   private docRef(table: string, id: string) {
     if (!this.uid) throw new Error('SyncEngine not initialized')
-    return doc(firestore, 'users', this.uid, table, id)
+    return doc(firestore, `users/${this.uid}/${table}/${id}`)
   }
 
   getPendingCount(): Promise<number> { return db.syncQueue.count() }

@@ -154,7 +154,7 @@ function SessionRow({ session, onDetail }: {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
             <span className="habit-dot" style={{ backgroundColor: session.categoryColor }} />
-            <p className="item-name">{session.categoryName}</p>
+<p className="item-name">{session.categoryName ?? 'Unknown'}</p>
             <span className="item-sub">{formatDuration(session.actualDurationSeconds)}</span>
           </div>
           <p className="item-sub">
@@ -177,6 +177,9 @@ type TimeFilter = 'today' | 'week' | 'month' | '3months' | 'year' | 'all'
 // Filter out sessions with obviously corrupted data (NaN, Infinity, negative values)
 // Allow sessions with 0 duration or undefined fields (edge cases)
 function isValidSession(s: CompletedWorkSession): boolean {
+  // Filter invalid category sessions first
+  if (!s.categoryId || !s.categoryName) return false;
+  
   // Only filter out actual bad values: NaN, Infinity, or negative
   // Let sessions with 0 or undefined pass through - they'll display as "0m" or similar
   const actual = s.actualDurationSeconds ?? 0
@@ -262,7 +265,7 @@ useEffect(() => {
 
   const filteredSessionsForList = useMemo(() =>
     filterSessions(sessions, timeFilter, selectedCategoryIds)
-      .filter(s => s.categoryName.toLowerCase().includes(searchTerm.toLowerCase())),
+      .filter(s => s.categoryName?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false),
     [sessions, timeFilter, selectedCategoryIds, searchTerm]
   )
 
@@ -272,7 +275,7 @@ useEffect(() => {
     const predefined = categories
     const custom = Array.from(new Set(sessions.map(s => s.categoryId))).map(id => {
       const session = sessions.find(s => s.categoryId === id)
-      return session ? {
+      return session && session.categoryName ? {
         id: session.categoryId,
         name: session.categoryName,
         color: session.categoryColor,

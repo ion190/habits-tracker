@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { db, generateId } from '../db/database'
 import { getPastTags } from '../utils'
 import TagSuggestions from './TagSuggestions'
-import type { ActiveWorkSession, WorkSessionTaskSnapshot, Task } from '../db/database'
+import type { WorkSessionTaskSnapshot, Task } from '../db/database'
 
 interface Props {
   onClose: () => void
@@ -12,7 +12,6 @@ interface Props {
 export default function StartWorkSessionModal({ onClose, onStarted }: Props) {
   const [tasks, setTasks] = useState<Task[]>([])
   const [durationMinutes, setDurationMinutes] = useState(25)
-  const [categoryName, setCategoryName] = useState('')
   const [selectedTasks, setSelectedTasks] = useState<string[]>([])
   const [notes, setNotes] = useState('')
   const [tags, setTags] = useState<string[]>([])
@@ -36,8 +35,7 @@ export default function StartWorkSessionModal({ onClose, onStarted }: Props) {
   }
 
   const startSession = () => {
-    const name = categoryName.trim()
-    if (!name || durationMinutes <= 0) return
+    if (durationMinutes <= 0) return
 
     const selectedTaskSnapshots: WorkSessionTaskSnapshot[] = selectedTasks.map(taskId => {
       const task = tasks.find(t => t.id === taskId)
@@ -46,12 +44,8 @@ export default function StartWorkSessionModal({ onClose, onStarted }: Props) {
         : { taskId, title: 'Unknown', tags: [] }
     })
 
-const session: ActiveWorkSession = {
+const session = {
       id: generateId(),
-      categoryId: generateId(),
-      categoryName: name,
-      categoryColor: 'var(--accent)',
-      categoryIcon: '⚡',
       durationSeconds: durationMinutes * 60,
       notes: notes.trim() || undefined,
       tags,
@@ -97,17 +91,7 @@ const session: ActiveWorkSession = {
         </div>
       </div>
 
-      <div className="form-label">
-        Category
-        <input
-          type="text"
-          className="field"
-          value={categoryName}
-          onChange={e => setCategoryName(e.target.value)}
-          placeholder="e.g. Deep Work, Writing, Coding"
-          style={{ fontSize: 16, padding: '12px 16px' }}
-        />
-      </div>
+
 
       <div className="form-label">
         Tasks (optional)
@@ -166,7 +150,7 @@ const session: ActiveWorkSession = {
         <button
           className="btn btn-primary"
           onClick={startSession}
-          disabled={!categoryName.trim() || durationMinutes <= 0}
+          disabled={durationMinutes <= 0}
         >
           Start Session ({durationMinutes}m)
         </button>
