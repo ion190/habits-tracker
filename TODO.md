@@ -1,27 +1,10 @@
-# Current Task
-- [x] Analyze current implementation
-- [x] Get user confirmation on plan
-- [x] Modify ActiveWorkSession.tsx to show modal on natural completion
-- [x] Test both scenarios work correctly (build passes)
+# Task Progress: Fix Vite import error in src/utils.ts
 
-## Implementation Complete ✓
+## Steps:
+- [x] 1. Plan approved by user
+- [x] 2. Create TODO.md to track progress
+- [x] 3. Update src/utils.ts with static imports and refactored getPastTags
+- [x] 4. Verify Vite dev server starts without errors (http://localhost:5174/)
+- [ ] 5. Test getPastTags functionality  
+- [ ] 6. Complete task
 
-Changes made to `src/components/ActiveWorkSession.tsx`:
-- When timer completes naturally: Now shows end modal instead of auto-saving
-- Both "timer completes" and "End Early" use same modal flow
-- User can input distraction time and confirm productivity before saving
-
-## Implementation Details
-
-### Changes to src/components/ActiveWorkSession.tsx:
-
-1. When timer completes naturally (lines 68-124):
-   - REMOVE: Auto-save logic after 3 seconds with default values
-   - REMOVE: onFinished() call in setTimeout
-   - ADD: Set showEndModal(true) to prompt user for data
-
-2. Keep existing confirmEnd() and showEndModal logic which handles:
-   - Distraction time input
-   - Productivity calculation
-   - Task completion status  
-   - Saving to database

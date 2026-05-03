@@ -4,48 +4,24 @@ import { db } from '../db/database'
 import { sync } from '../db/sync'
 import type { Habit, JournalEntry } from '../db/database'
 import { dateKeyForPeriod } from '../db/database'
-import { IconGrid, IconCheck, IconDumbbell, IconSettings } from './Icons'
+import { IconGrid, IconCheck, IconChecklist, IconCalendar, IconTimer, IconBook, IconDumbbell, IconSettings, IconUpload } from './Icons'
 import SyncBadge from './SyncBadge'
+import { useMatch } from 'react-router-dom'
 
-const IconChecklist = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
-  </svg>
-)
-const IconTimer = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <circle cx="12" cy="12" r="10" /><polyline points="12,6 12,12 16,14" />
-  </svg>
-)
-const IconBook = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M4 19.5A2.5 2.5 0 016.5 17H20" />
-    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
-  </svg>
-)
-const IconCalendar = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" />
-    <line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
-  </svg>
-)
-const IconUpload = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-    <polyline points="16,16 12,12 8,16" /><line x1="12" y1="12" x2="12" y2="21" />
-    <path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3" />
-  </svg>
-)
+
 
 export default function Sidebar() {
   const [habits,            setHabits]            = useState<Habit[]>([])
   const [recentJournal,     setRecentJournal]      = useState<JournalEntry[]>([])
-  const [habitsOpen,        setHabitsOpen]         = useState(true)
-  const [journalOpen,       setJournalOpen]        = useState(true)
+  const [habitsOpen,        setHabitsOpen]         = useState(false)
+  const [journalOpen,       setJournalOpen]        = useState(false)
   const [isWorkoutActive,   setIsWorkoutActive]    = useState(false)
   const [isSessionActive,   setIsSessionActive]    = useState(false)
   const [isSyncing,         setIsSyncing]          = useState(false)
   const [pendingCount,      setPendingCount]       = useState(0)
   const [todayHasNote,      setTodayHasNote]       = useState(false)
+  const habitsMatch = useMatch('/habits/:id?')
+  const journalMatch = useMatch('/journal')
 
   const loadData = useCallback(async () => {
     const [h, journal] = await Promise.all([
@@ -112,15 +88,23 @@ export default function Sidebar() {
             <IconGrid /> Dashboard
           </NavLink>
 
+<NavLink to="/tasks" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+            <IconChecklist /> Tasks
+          </NavLink>
+
+          
+          {/* Calendar */}
+          <NavLink to="/calendar" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+            <IconCalendar /> Calendar
+          </NavLink>
+
           {/* Habits (collapsible) */}
           <div>
-            <div className="sidebar-link sidebar-parent">
-              <NavLink to="/habits" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
-                style={{ flex: 1, padding: 0, background: 'none' }}>
+            <div className={`sidebar-parent ${(habitsMatch ? 'active' : '')}`}>
+              <NavLink to="/habits" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} style={{ flex: 1 }}>
                 <IconCheck /> Habits
               </NavLink>
-              <span style={{ fontSize: 10, opacity: 0.5, cursor: 'pointer', padding: '4px 8px', borderRadius: 4 }}
-                onClick={() => setHabitsOpen(o => !o)}>
+              <span className="sidebar-toggle" onClick={() => setHabitsOpen(o => !o)}>
                 {habitsOpen ? '▲' : '▼'}
               </span>
             </div>
@@ -137,8 +121,9 @@ export default function Sidebar() {
             )}
           </div>
 
-          <NavLink to="/tasks" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
-            <IconChecklist /> Tasks
+                    <NavLink to="/work-sessions"
+            className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''} ${isSessionActive ? 'ongoing-workout' : ''}`}>
+            <IconTimer /> Work Sessions
           </NavLink>
 
           <NavLink to="/workouts"
@@ -146,21 +131,14 @@ export default function Sidebar() {
             <IconDumbbell /> Workouts
           </NavLink>
 
-          <NavLink to="/work-sessions"
-            className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''} ${isSessionActive ? 'ongoing-workout' : ''}`}>
-            <IconTimer /> Work Sessions
-          </NavLink>
 
-          {/* Calendar */}
-          <NavLink to="/calendar" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
-            <IconCalendar /> Calendar
-          </NavLink>
+
+
 
           {/* Journal (collapsible with preview) */}
           <div>
-            <div className="sidebar-link sidebar-parent" style={{ marginTop: 4 }}>
-              <NavLink to="/journal" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
-                style={{ flex: 1, padding: 0, background: 'none' }}>
+            <div className={`sidebar-parent ${(journalMatch ? 'active' : '')}`}>
+              <NavLink to="/journal" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} style={{ flex: 1 }}>
                 <IconBook />
                 <span>Journal</span>
                 {todayHasNote && (
@@ -170,8 +148,7 @@ export default function Sidebar() {
                   }} title="Today's note written" />
                 )}
               </NavLink>
-              <span style={{ fontSize: 10, opacity: 0.5, cursor: 'pointer', padding: '4px 8px', borderRadius: 4 }}
-                onClick={() => setJournalOpen(o => !o)}>
+              <span className="sidebar-toggle" onClick={() => setJournalOpen(o => !o)}>
                 {journalOpen ? '▲' : '▼'}
               </span>
             </div>
@@ -179,8 +156,7 @@ export default function Sidebar() {
               <div className="sidebar-children">
                 {recentJournal.map(entry => (
                   <NavLink key={entry.id} to={`/journal?period=${entry.period}&key=${entry.dateKey}`}
-                    className={({ isActive }) => `sidebar-link sidebar-child ${isActive ? 'active' : ''}`}
-                    style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2, padding: '6px 10px' }}>
+                    className={({ isActive }) => `sidebar-link sidebar-child ${isActive ? 'active' : ''}`}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%' }}>
                       <span style={{ fontSize: 12 }}>{periodEmoji[entry.period]}</span>
                       <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--text-h)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -196,7 +172,7 @@ export default function Sidebar() {
             )}
             {journalOpen && recentJournal.length === 0 && (
               <div className="sidebar-children">
-                <p style={{ fontSize: 11, opacity: 0.5, padding: '4px 10px' }}>No entries yet</p>
+                <p className="sidebar-empty">No entries yet</p>
               </div>
             )}
           </div>

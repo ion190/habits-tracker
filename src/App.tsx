@@ -13,7 +13,9 @@ import WorkoutTimer from './components/WorkoutTimer'
 import WorkSessionTimer from './components/WorkSessionTimer'
 import ActiveWorkSession from './components/ActiveWorkSession'
 import { sync } from './db/sync'
-import { useEffect, lazy, Suspense, useState, useRef } from 'react'
+import React from 'react'
+import { useEffect, lazy, Suspense, useState, useRef, useCallback } from 'react'
+import ErrorBoundary from './components/ErrorBoundary'
 
 function DashboardPage() {
   return (
@@ -24,7 +26,7 @@ function DashboardPage() {
   )
 }
 
-const WorkSessions = lazy(() => import('./pages/WorkSessions'))
+import WorkSessions from './pages/WorkSessions'
 const JournalPage  = lazy(() => import('./pages/JournalPage'))
 const CalendarPage = lazy(() => import('./pages/CalendarPage'))
 
@@ -84,6 +86,7 @@ const PageFallback = () => <div className="page-loading">Loading…</div>
 
 function AppShell() {
   const { user, loading } = useAuth()
+  const [hasActiveTimer, setHasActiveTimer] = useState(false)
 
   // ── SYNC ROOT CAUSE FIX ───────────────────────────────
   // Call sync.init() whenever the authenticated user changes.
@@ -98,6 +101,30 @@ function AppShell() {
     }
   }, [user?.uid])
 
+  // ── Active timer detection ───────────────────────────────
+  const checkActiveTimers = useCallback(() => {
+    const hasWorkout = !!localStorage.getItem('activeWorkout')
+    const hasSession = !!localStorage.getItem('activeWorkSession')
+    setHasActiveTimer(hasWorkout || hasSession)
+  }, [])
+
+  useEffect(() => {
+    const handleStatusChange = () => checkActiveTimers()
+    
+    // Initial check
+    handleStatusChange()
+    
+    window.addEventListener('storage', handleStatusChange)
+    window.addEventListener('workoutStatusChange', handleStatusChange)
+    window.addEventListener('workSessionStatusChange', handleStatusChange)
+
+    return () => {
+      window.removeEventListener('storage', handleStatusChange)
+      window.removeEventListener('workoutStatusChange', handleStatusChange)
+      window.removeEventListener('workSessionStatusChange', handleStatusChange)
+    }
+  }, [checkActiveTimers])
+
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100svh' }}>
@@ -109,32 +136,34 @@ function AppShell() {
   if (!user) return <AuthPage />
 
   return (
-    <div className="app-layout">
-      <div className="header-navbar">
-        <WorkoutTimer />
-        <WorkSessionTimer />
-      </div>
+<div className="app-layout" style={{ '--header-height': hasActiveTimer ? '50px' : '0px' } as React.CSSProperties}>
+{hasActiveTimer && (
+        <div className="header-navbar">
+          <WorkoutTimer />
+          <WorkSessionTimer />
+        </div>
+      )}
       <Sidebar />
       <main className="app-main">
-        <Routes>
-          <Route path="/"               element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard"      element={<DashboardPage />} />
-          <Route path="/habits"         element={<Habits />} />
-          <Route path="/habits/:habitId" element={<HabitDetail />} />
-          <Route path="/tasks"          element={<Tasks />} />
-          <Route path="/workouts"       element={<Workouts />} />
-          <Route path="/work-sessions"  element={
-            <Suspense fallback={<PageFallback />}><WorkSessions /></Suspense>
-          } />
-          <Route path="/journal"        element={
-            <Suspense fallback={<PageFallback />}><JournalPage /></Suspense>
-          } />
-          <Route path="/calendar"       element={
-            <Suspense fallback={<PageFallback />}><CalendarPage /></Suspense>
-          } />
-          <Route path="/settings"       element={<Settings />} />
-          <Route path="*"               element={<Navigate to="/dashboard" replace />} />
-        </Routes>
+        <ErrorBoundary>
+          <Routes>
+            <Route path="/"               element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard"      element={<DashboardPage />} />
+            <Route path="/habits"         element={<Habits />} />
+            <Route path="/habits/:habitId" element={<HabitDetail />} />
+            <Route path="/tasks"          element={<Tasks />} />
+            <Route path="/workouts"       element={<Workouts />} />
+            <Route path="/work-sessions"  element={<WorkSessions />} />
+            <Route path="/journal"        element={
+              <Suspense fallback={<PageFallback />}><JournalPage /></Suspense>
+            } />
+            <Route path="/calendar"       element={
+              <Suspense fallback={<PageFallback />}><CalendarPage /></Suspense>
+            } />
+            <Route path="/settings"       element={<Settings />} />
+            <Route path="*"               element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </ErrorBoundary>
       </main>
       <ActiveSessionOverlay />
     </div>

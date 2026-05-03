@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { db, generateId } from '../db/database'
+import { getPastTags } from '../utils'
+import TagSuggestions from './TagSuggestions'
 import type { ActiveWorkSession, WorkSessionTaskSnapshot, Task } from '../db/database'
 
 interface Props {
@@ -13,11 +15,18 @@ export default function StartWorkSessionModal({ onClose, onStarted }: Props) {
   const [categoryName, setCategoryName] = useState('')
   const [selectedTasks, setSelectedTasks] = useState<string[]>([])
   const [notes, setNotes] = useState('')
+  const [tags, setTags] = useState<string[]>([])
+  const [tagInput, setTagInput] = useState('')
+  const [pastTags, setPastTags] = useState<string[]>([])
 
   useEffect(() => {
     db.tasks.filter(t => !t.completedAt && !t.archivedAt).toArray().then(ts => {
       setTasks(ts)
     })
+  }, [])
+
+  useEffect(() => {
+    getPastTags('work').then(setPastTags)
   }, [])
 
   const toggleTask = (taskId: string) => {
@@ -45,6 +54,7 @@ const session: ActiveWorkSession = {
       categoryIcon: '⚡',
       durationSeconds: durationMinutes * 60,
       notes: notes.trim() || undefined,
+      tags,
       tasks: selectedTaskSnapshots,
       startedAt: new Date().toISOString(),
     }
@@ -133,6 +143,13 @@ const session: ActiveWorkSession = {
         )}
       </div>
 
+      <TagSuggestions
+        pastTags={pastTags}
+        currentTags={tags}
+        onChange={setTags}
+        inputValue={tagInput}
+        onInputChange={setTagInput}
+      />
       <div className="form-label">
         Notes (optional)
         <textarea

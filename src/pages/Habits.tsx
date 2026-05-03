@@ -182,45 +182,7 @@ function HabitModal({
 
         <div className="form-label">
           Tags
-          <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-            <input
-              type="text"
-              className="field"
-              placeholder="Add tag..."
-              value={tagInput}
-              onChange={(e) => setTagInput(e.target.value)}
-              onKeyPress={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag() } }}
-              style={{ flex: 1 }}
-            />
-            <button className="btn btn-secondary" onClick={addTag}>Add</button>
-          </div>
-          {tags.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {tags.map(tag => (
-                <span
-                  key={tag}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    padding: '4px 10px',
-                    background: 'var(--accent-bg)',
-                    border: '1px solid var(--accent-border)',
-                    borderRadius: 6,
-                    fontSize: 12,
-                  }}
-                >
-                  {tag}
-                  <button
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)' }}
-                    onClick={() => removeTag(tag)}
-                  >
-                    ✕
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
+          {/* Note: HabitModal is embedded, so pastTags loaded in parent Habits page useEffect */}
         </div>
 
         <div className="form-actions">
@@ -298,7 +260,18 @@ function HabitRow({
 // ── Main page ─────────────────────────────────────────────
 
 export default function Habits() {
+  const getTags = (habit: Habit): string[] => (habit.tags ?? []).filter(Boolean)
+
   const [habits,  setHabits]  = useState<Habit[]>([])
+
+  // Warn about missing tags during development
+  useEffect(() => {
+    const missing = habits.filter(h => h.tags === undefined || h.tags === null)
+    if (missing.length > 0) {
+      console.warn(`⚠️ Found ${missing.length} habits missing tags property:`, missing.map(h => h.name))
+    }
+  }, [habits])
+
   const [archivedHabits, setArchivedHabits] = useState<Habit[]>([])
   const [showArchived, setShowArchived] = useState(false)
   const [logs,    setLogs]    = useState<HabitLog[]>([])
@@ -313,7 +286,7 @@ export default function Habits() {
   const [selectedTags, setSelectedTags] = useState<string[]>([])
 
   const allTags = useMemo(() => {
-    return Array.from(new Set(habits.flatMap(h => h.tags))).sort()
+    return Array.from(new Set(habits.flatMap(getTags))).sort()
   }, [habits])
 
   // function toggleTag(tag: string) {
@@ -325,12 +298,12 @@ export default function Habits() {
   const displayedHabits = useMemo(() => {
     return selectedTags.length === 0 
       ? habits 
-      : habits.filter(h => selectedTags.every(tag => h.tags.includes(tag)))
+      : habits.filter(h => selectedTags.every(tag => getTags(h).includes(tag)))
   }, [habits, selectedTags])
 
   const filteredLogs = useMemo(() => {
     if (selectedTags.length === 0) return logs
-    return logs.filter(l => habits.some(h => selectedTags.some(tag => h.tags.includes(tag)) && h.id === l.habitId))
+    return logs.filter(l => habits.some(h => selectedTags.some(tag => getTags(h).includes(tag)) && h.id === l.habitId))
   }, [logs, habits, selectedTags])
 
   // Heatmap filter state
@@ -482,7 +455,7 @@ async function reload() {
                     )
                   }}
                 >
-                  {tag} ({habits.filter(h => h.tags.includes(tag)).length})
+                  {tag} ({habits.filter(h => getTags(h).includes(tag)).length})
                   {selectedTags.includes(tag) && <span style={{ marginLeft: 4 }}>✕</span>}
                 </span>
               ))}

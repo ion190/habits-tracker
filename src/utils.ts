@@ -1,3 +1,6 @@
+import { db } from './db/database'
+import type { Task, Habit, CompletedWorkSession } from './db/database'
+
 /** Format seconds → '45m' or '1h 23m' (elapsed time) */
 export function formatDuration(seconds: number): string {
   if (seconds <= 0) return '0m'
@@ -15,7 +18,6 @@ export function formatCountdown(seconds: number): string {
   return `${m}:${s}`
 }
 
-
 /** ISO date string → 'YYYY-MM-DD' */
 export function toDateKey(iso: string): string {
   return iso.slice(0, 10)
@@ -25,7 +27,7 @@ export function toDateKey(iso: string): string {
 export function startOfWeek(): Date {
   const d = new Date()
   const day = d.getDay()
-  const diff = day === 0 ? 6 : day - 1 // adjust so Mon=0
+  const diff = day === 0 ? 6 : day - 1
   d.setDate(d.getDate() - diff)
   d.setHours(0, 0, 0, 0)
   return d
@@ -50,7 +52,7 @@ export function makeId(): string {
 export function formatDateGMT3(isoString: string, options?: { dateOnly?: boolean; timeOnly?: boolean }): string {
   const date = new Date(isoString)
   const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Africa/Cairo', // GMT+3
+    timeZone: 'Africa/Cairo',
     ...(options?.timeOnly ? {
       hour: '2-digit',
       minute: '2-digit',
@@ -123,10 +125,49 @@ function applyTheme(theme: Theme): void {
 export function initializeTheme(): void {
   applyTheme(getTheme())
   
-  // Listen for system theme changes when in auto mode
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     if (getTheme() === 'auto') {
       applyTheme('auto')
     }
   })
 }
+
+/** Get unique past tags used for a specific item type */
+export async function getPastTags(type: 'task' | 'habit' | 'work'): Promise<string[]> {
+  let allTags: string[] = []
+  
+  switch (type) {
+    case 'task': {
+      const tasks: Task[] = await db.tasks.toArray()
+      allTags = tasks.flatMap(t => t.tags ?? [])
+      break
+    }
+    
+    case 'habit': {
+      const habits: Habit[] = await db.habits.toArray()
+      allTags = habits.flatMap(h => h.tags ?? [])
+      break
+    }
+    
+    case 'work': {
+      const sessions: CompletedWorkSession[] = await db.completedWorkSessions.toArray()
+      allTags = sessions.flatMap(s => s.tasks.flatMap(t => t.tags ?? []))
+      break
+    }
+  }
+  
+  const tagCount = new Map<string, number>()
+  allTags.forEach(tag => {
+    const normalized = tag.trim().toLowerCase()
+    if (normalized) {
+      tagCount.set(normalized, (tagCount.get(normalized) ?? 0) + 1)
+    }
+  })
+  
+  return Array.from(tagCount.entries())
+    .sort(([,a], [,b]) => b - a)
+    .slice(0, 24)
+    .map(([tag]) => tag)
+    .sort()
+}
+

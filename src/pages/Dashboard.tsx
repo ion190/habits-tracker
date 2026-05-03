@@ -229,18 +229,13 @@ export default function Dashboard() {
           <p className="stat-sub">for today</p>
         </div>
         <div className="stat-card">
-          <p className="stat-label">Workout time</p>
-          <p className="stat-value">{formatDuration(currentWeekTime)}</p>
-          <p className="stat-sub">this week</p>
-        </div>
-        <div className="stat-card">
           <p className="stat-label">Workouts</p>
-          <p className="stat-value">{weekWorkouts.length}</p>
+          <p className="stat-value">{weekWorkouts.length}/{weeklyTarget}</p>
           <p className="stat-sub">this week</p>
         </div>
       </div>
 
-      <section className="card">
+      {/* <section className="card">
         <h2 className="card-title">Weekly workout goal: {weekWorkouts.length}/{weeklyTarget}</h2>
         <div className="quota-bar-track">
         <div
@@ -251,7 +246,7 @@ export default function Dashboard() {
             }}
           />
         </div>
-      </section>
+      </section> */}
 
       <section className="card habit-quick-card">
         <h2 className="card-title">Today's habits</h2>

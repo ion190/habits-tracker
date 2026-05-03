@@ -85,6 +85,23 @@ function Tooltip({ day, habits, x, y }: { day: DayData; habits: Habit[]; x: numb
 function CellContent({ day, habits }: { day: DayData; habits: Habit[] }) {
   const hasActivity = day.habitIds.length > 0 || day.workoutNames.length > 0
   if (!hasActivity) return null
+
+  const numHabits = day.habitIds.length
+  const hasWorkouts = day.workoutNames.length > 0
+  const totalActivities = numHabits + Number(hasWorkouts)
+
+  if (totalActivities === 1) {
+    let bgColor: string
+    if (numHabits === 1) {
+      const habit = habits.find(h => h.id === day.habitIds[0])
+      bgColor = habit?.color ?? '#ccc'
+    } else {
+      bgColor = 'var(--workout-color)'
+    }
+    return <div style={{ backgroundColor: bgColor, width: '100%', height: '100%' }} />
+  }
+
+  // Multiple activities: original segments
   return (
     <div className="hm-segments">
       {day.habitIds.map(hid => {

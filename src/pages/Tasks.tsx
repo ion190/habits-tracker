@@ -1,7 +1,9 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { db, generateId } from '../db/database'
+import { getPastTags } from '../utils'
 import { sync } from '../db/sync'
+import TagSuggestions from '../components/TagSuggestions'
 import type { Task } from '../db/database'
 import { formatDateOnlyGMT3 } from '../utils'
 import Modal from '../components/Modal'
@@ -40,6 +42,7 @@ export default function Tasks() {
   const [importance, setImportance] = useState<'low' | 'medium' | 'high'>('medium')
   const [tags, setTags] = useState<string[]>([])
   const [tagInput, setTagInput] = useState('')
+  const [pastTaskTags, setPastTaskTags] = useState<string[]>([])
 
   // Load tasks
 async function load() {
@@ -76,7 +79,10 @@ async function load() {
     setArchivedTasks(archived)
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { 
+    load()
+    getPastTags('task').then(setPastTaskTags)
+  }, [])
 
   function openNewTask() {
     setEditingTask(null)
@@ -102,17 +108,7 @@ async function load() {
     setShowModal(true)
   }
 
-  function addTag() {
-    const tag = tagInput.trim().toLowerCase()
-    if (tag && !tags.includes(tag)) {
-      setTags([...tags, tag])
-      setTagInput('')
-    }
-  }
-
-  function removeTag(tag: string) {
-    setTags(tags.filter(t => t !== tag))
-  }
+  // addTag/removeTag handled by TagSuggestions
 
   async function save() {
     if (!title.trim()) return
@@ -676,48 +672,13 @@ async function load() {
               </div>
             </div>
 
-            <div className="form-label">
-              Tags
-              <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-                <input
-                  type="text"
-                  className="field"
-                  placeholder="Add tag..."
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyPress={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag() } }}
-                  style={{ flex: 1 }}
-                />
-                <button className="btn btn-secondary" onClick={addTag}>Add</button>
-              </div>
-              {tags.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {tags.map(tag => (
-                    <span
-                      key={tag}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        padding: '4px 10px',
-                        background: 'var(--accent-bg)',
-                        border: '1px solid var(--accent-border)',
-                        borderRadius: 6,
-                        fontSize: 12,
-                      }}
-                    >
-                      {tag}
-                      <button
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)' }}
-                        onClick={() => removeTag(tag)}
-                      >
-                        ✕
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
+            <TagSuggestions
+              pastTags={pastTaskTags}
+              currentTags={tags}
+              onChange={setTags}
+              inputValue={tagInput}
+              onInputChange={setTagInput}
+            />
 
             <div className="form-actions">
               <button className="btn btn-ghost" onClick={() => setShowModal(false)}>Cancel</button>

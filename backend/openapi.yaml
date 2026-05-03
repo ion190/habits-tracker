@@ -1,0 +1,153 @@
+openAPI: 3.0.3
+info:
+  title: Habits Tracker REST API
+  description: Lab 7 - Proper RESTful design (nouns, verbs in HTTP, status codes, pagination, JWT)
+  version: 1.0.0
+servers:
+  - url: http://localhost:3001
+paths:
+  /token:
+    post:
+      summary: Get JWT token (expires 60s)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, example: 'user@example.com' }
+                password: { type: string, example: 'password' }
+      responses:
+        '200':
+          description: Token issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+        '400': { description: 'Missing credentials' }
+        '401': { description: 'Invalid credentials' }
+  
+  /habits:
+    get:
+      summary: List habits (paginated)
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        '200':
+          description: Paginated list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Habit' } }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+    post:
+      summary: Create habit
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HabitCreate' }
+      responses:
+        '201': { description: 'Created', content: { application/json: { schema: { $ref: '#/components/schemas/Habit' } } } }
+        '400': { description: 'Invalid data' }
+  
+  /habits/{id}:
+    get:
+      summary: Get single habit
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 'OK', content: { application/json: { schema: { $ref: '#/components/schemas/Habit' } } } }
+        '404': { description: 'Not found' }
+    put:
+      summary: Replace habit
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Habit' }
+      responses:
+        '200': { description: 'Updated' }
+    patch:
+      summary: Partial update habit
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200': { description: 'Updated' }
+    delete:
+      summary: Archive habit
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: 'Deleted' }
+        '404': { description: 'Not found' }
+
+components:
+  schemas:
+    Habit:
+      type: object
+      required: [id, name, color, icon, frequency]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        color: { type: string, pattern: '^#[0-9a-fA-F]{6}$' }
+        quota:
+          type: object
+          properties:
+            type: { enum: [quantity, time] }
+            target: { type: number, minimum: 0 }
+            unit: { type: string }
+    HabitCreate:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        color: { type: string }
+        quota:
+          type: object
+          properties:
+            type: { enum: [quantity, time] }
+            target: { type: number }
+            unit: { type: string }
+    PaginationMeta:
+      type: object
+      properties:
+        total: { type: integer }
+        limit: { type: integer }
+        offset: { type: integer }
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+security:
+  - bearerAuth: []
+

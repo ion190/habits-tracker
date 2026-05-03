@@ -167,6 +167,7 @@ export default function ActiveWorkSession({ onFinished, onDiscard }: Props) {
       distractionSeconds,
       productivityPct,
       notes:                    session.notes,
+      tags:                     session.tags,
       tasks:                    session.tasks,
       startedAt:                session.startedAt,
       endedAt:                  new Date().toISOString(),
@@ -218,9 +219,16 @@ export default function ActiveWorkSession({ onFinished, onDiscard }: Props) {
               {session.categoryName}
             </h2>
           </div>
-          <p style={{ margin: 0, opacity: 0.6, fontSize: 14 }}>
+<p style={{ margin: 0, opacity: 0.6, fontSize: 14 }}>
             {formatDuration(elapsed)} elapsed
             {session.notes && <span> • {session.notes}</span>}
+            {session.tags && session.tags.length > 0 && (
+              <span style={{ fontSize: 12 }}>
+                {' • '}
+                {session.tags.slice(0, 3).join(', ')}
+                {session.tags.length > 3 && '…'}
+              </span>
+            )}
           </p>
         </div>
         <div style={{

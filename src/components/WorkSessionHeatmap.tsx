@@ -84,31 +84,26 @@ export default function WorkSessionHeatmap({ sessions, daysBack }: Props) {
     return () => clearTimeout(t)
   }, [])
 
-  // Build array of date strings covering [earliest session | daysBack ago] → today
-  const days = useMemo(() => {
-    let start: Date
-    if (sessions.length === 0) {
-      start = new Date(); start.setDate(start.getDate() - daysBack)
-    } else {
-      const earliest = new Date(Math.min(...sessions.map(s => new Date(s.startedAt).getTime())))
-      const daysAgo  = Math.floor((Date.now() - earliest.getTime()) / 86_400_000)
-      start = daysAgo > daysBack ? new Date() : earliest
-      if (daysAgo > daysBack) start.setDate(start.getDate() - daysBack)
-    }
 
+
+  // Build array of date strings covering [earliest session | daysBack ago] → today
+    const days = useMemo(() => {
+    // Always generate last N days including today - simplest fix
     const arr: string[] = []
-    const today = new Date(); today.setHours(0, 0, 0, 0)
-    const cur   = new Date(start); cur.setHours(0, 0, 0, 0)
-    while (arr.length < daysBack && cur <= today) {
+    const today = new Date(); today.setHours(23, 59, 59, 999)
+    let cur = new Date(today)
+    cur.setDate(cur.getDate() - daysBack + 1) // +1 to include today
+    while (cur <= today) {
       arr.push(toDateKey(cur.toISOString()))
       cur.setDate(cur.getDate() + 1)
     }
     return arr
-  }, [sessions, daysBack])
+  }, [daysBack])
 
   // Build day-keyed map with aggregated session data
   const dayMap = useMemo(() => {
     const map = new Map<string, DayData>()
+    const todayStr = toDateKey(new Date().toISOString())
     for (const d of days) map.set(d, { date: d, totalSessions: 0, avgProductivity: 0, titles: [], colors: [] })
 
     for (const s of sessions) {
@@ -124,6 +119,7 @@ export default function WorkSessionHeatmap({ sessions, daysBack }: Props) {
         entry.avgProductivity = (entry.avgProductivity * (entry.totalSessions - 1) + productivity) / entry.totalSessions
       }
     }
+
     return map
   }, [days, sessions])
 
@@ -185,8 +181,14 @@ export default function WorkSessionHeatmap({ sessions, daysBack }: Props) {
             return (
               <div
                 key={d}
+                data-date={d}
                 className={`hm-cell ${getCls(day)}`}
-                style={{ gridRow: row, gridColumn: col, cursor: 'pointer', borderRadius: 3 }}
+                style={{ 
+                  gridRow: row, 
+                  gridColumn: col, 
+                  cursor: 'pointer', 
+                  borderRadius: 3
+                }}
                 onMouseEnter={() => setHovered(day)}
                 onMouseLeave={() => setHovered(null)}
                 role="button"

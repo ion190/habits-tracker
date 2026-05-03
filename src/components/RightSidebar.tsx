@@ -4,8 +4,7 @@ import { db, generateId } from '../db/database'
 import StartWorkoutModal from './StartWorkoutModal'
 import StartWorkSessionModal from './StartWorkSessionModal'
 import type { Habit, HabitLog, Task, CalendarActivity, JournalEntry } from '../db/database'
-import { toDateKey, startOfWeek, formatDuration } from '../utils'
-import { dateKeyForPeriod } from '../db/database'
+import { toDateKey, startOfWeek } from '../utils'
 import { sync } from '../db/sync'
 import ModalPortal from './ModalPortal'
 
@@ -135,7 +134,6 @@ export default function RightSidebar({ onDataChange }: Props) {
   const [habits,              setHabits]              = useState<Habit[]>([])
   const [logs,                setLogs]                = useState<HabitLog[]>([])
   const [tasks,               setTasks]               = useState<Task[]>([])
-  const [weeklyTime,          setWeeklyTime]          = useState(0)
   const [showStart,           setShowStart]           = useState(false)
   const [showStartSession,    setShowStartSession]    = useState(false)
   const [activeExists,        setActiveExists]        = useState(false)
@@ -144,10 +142,8 @@ export default function RightSidebar({ onDataChange }: Props) {
   const [journals,            setJournals]            = useState<Map<string, JournalEntry>>(new Map())
   const [popupDate,           setPopupDate]           = useState<string | null>(null)
 
-  const weeklyTarget = parseInt(localStorage.getItem('weeklyWorkoutTarget') ?? '3')
 
   async function load() {
-    const weekStart = startOfWeek()
     const [h, l, t, cw, acts, js] = await Promise.all([
       db.habits.filter(h => !h.archivedAt).toArray(),
       db.habitLogs.toArray(),
@@ -159,7 +155,6 @@ export default function RightSidebar({ onDataChange }: Props) {
     setHabits(h)
     setLogs(l)
     setTasks(t.sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? '')).slice(0, 5))
-    setWeeklyTime(cw.filter(w => new Date(w.startedAt) >= weekStart).reduce((s, w) => s + w.totalDurationSeconds, 0))
     setActiveExists(!!localStorage.getItem('activeWorkout'))
     setActiveSessionExists(!!localStorage.getItem('activeWorkSession'))
     setActivities(acts)
@@ -199,6 +194,20 @@ export default function RightSidebar({ onDataChange }: Props) {
 
   return (
     <aside className="right-sidebar">
+      {/* Work session button */}
+      {activeSessionExists ? (
+        <div className="rs-card" style={{ borderColor:'rgba(239,68,68,0.4)', background:'rgba(239,68,68,0.06)', cursor:'pointer' }}
+          onClick={() => navigate('/work-sessions')}>
+          <p className="rs-label" style={{ color:'#ef4444' }}>⏱️ Session in progress</p>
+          <p className="rs-sub">Tap to continue</p>
+        </div>
+      ) : (
+        <button className="btn btn-secondary" style={{ width:'100%', justifyContent:'center' }}
+          onClick={() => setShowStartSession(true)}>
+          ⏱️ Start work session
+        </button>
+      )}
+
       {/* Today habits */}
       <div className="rs-card">
         <p className="rs-label">Today's habits</p>
@@ -273,19 +282,7 @@ export default function RightSidebar({ onDataChange }: Props) {
         </button>
       )}
 
-      {/* Work session button */}
-      {activeSessionExists ? (
-        <div className="rs-card" style={{ borderColor:'rgba(239,68,68,0.4)', background:'rgba(239,68,68,0.06)', cursor:'pointer' }}
-          onClick={() => navigate('/work-sessions')}>
-          <p className="rs-label" style={{ color:'#ef4444' }}>⏱️ Session in progress</p>
-          <p className="rs-sub">Tap to continue</p>
-        </div>
-      ) : (
-        <button className="btn btn-secondary" style={{ width:'100%', justifyContent:'center' }}
-          onClick={() => setShowStartSession(true)}>
-          ⏱️ Start work session
-        </button>
-      )}
+      
 
       {/* Work session modal */}
       {showStartSession && (
@@ -297,16 +294,6 @@ export default function RightSidebar({ onDataChange }: Props) {
         </ModalPortal>
       )}
 
-      {/* Weekly goal */}
-      <div className="rs-card">
-        <p className="rs-label">Weekly goal</p>
-        <div className="quota-bar-track" style={{ marginTop:6 }}>
-          <div className="quota-bar-fill" style={{
-            width: `${Math.min(100, Math.round((weeklyTime > 0 ? 1 : 0) / weeklyTarget * 100))}%`,
-          }} />
-        </div>
-        <p className="rs-sub" style={{ marginTop:4 }}>{formatDuration(weeklyTime)} this week</p>
-      </div>
 
       {showStart && (
         <StartWorkoutModal

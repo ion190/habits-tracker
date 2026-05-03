@@ -132,6 +132,7 @@ export interface ActiveWorkSession {
   categoryIcon: string
   durationSeconds: number
   notes?: string
+  tags?: string[]
   tasks: WorkSessionTaskSnapshot[]
   startedAt: string
   pausedAt?: string
@@ -148,6 +149,7 @@ export interface CompletedWorkSession {
   distractionSeconds: number
   productivityPct: number
   notes?: string
+  tags?: string[]
   tasks: WorkSessionTaskSnapshot[]
   startedAt: string
   endedAt: string
@@ -244,6 +246,20 @@ class RitualsDB extends Dexie {
       calendarActivities:     '&id, date, startTime',
       syncQueue:              '&id, table, recordId, createdAt',
     })
+
+    this.version(9).stores({
+      habits:                 '&id, name, frequency, archivedAt',
+      habitLogs:              '&id, habitId, completedAt',
+      tasks:                  '&id, dueDate, notificationTime, completedAt, urgency, importance, archivedAt',
+      exercises:              '&id, name, category',
+      workoutPlans:           '&id, name, createdAt',
+      completedWorkouts:      '&id, workoutPlanId, startedAt',
+      workSessionCategories:  '&id, name',
+      completedWorkSessions:  '&id, categoryId, startedAt',
+      journalEntries:         '&id, period, dateKey, [period+dateKey]',
+      calendarActivities:     '&id, date, startTime',
+      syncQueue:              '&id, table, recordId, createdAt',
+    })
   }
 }
 
@@ -286,15 +302,48 @@ export function labelForDateKey(period: JournalPeriod, dateKey: string): string 
       const d = new Date(dateKey + 'T00:00:00')
       return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
     }
-    case 'weekly':    return `Week ${dateKey.split('W')[1]}, ${dateKey.split('-')[0]}`
+    case 'weekly': {
+      const [yearStr, weekStr] = dateKey.split('-W')
+      const year = parseInt(yearStr)
+      const week = parseInt(weekStr)
+      const jan1 = new Date(year, 0, 1)
+      const daysToMonday = (1 + 7 - jan1.getDay()) % 7
+      const mon = new Date(year, 0, daysToMonday + (week - 1) * 7 + 1)
+      const sun = new Date(mon)
+      sun.setDate(sun.getDate() + 6)
+      const baseLabel = `Week ${week}, ${year}`
+      const rangeLabel = formatDateRange(mon, sun)
+      return `${baseLabel} (${rangeLabel})`
+    }
     case 'monthly': {
       const [y, mo] = dateKey.split('-')
       return new Date(+y, +mo - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
     }
-    case 'quarterly': return dateKey.replace('-', ' ')
+    case 'quarterly': {
+      const [yearStr, qStr] = dateKey.split('-Q')
+      const year = parseInt(yearStr)
+      const q = parseInt(qStr)
+      const monthStart = (q - 1) * 3
+      const monthEnd = monthStart + 2
+      const startDate = new Date(year, monthStart, 1)
+      const endDate = new Date(year, monthEnd + 1, 0) // Last day of end month
+      const baseLabel = dateKey.replace('-', ' ')
+      const rangeLabel = formatDateRange(startDate, endDate)
+      return `${baseLabel} (${rangeLabel})`
+    }
     case 'yearly':    return dateKey
     case 'decadely':  return `The ${dateKey}`
   }
+}
+
+function formatDateRange(start: Date, end: Date): string {
+  const formatShort = (date: Date): string => {
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  }
+  if (start.getFullYear() === end.getFullYear()) {
+    return `${formatShort(start)}–${formatShort(end)}`
+  }
+  return `${formatShort(start)}–${formatShort(end)}`
 }
 
 // ── Import / Export ───────────────────────────────────────

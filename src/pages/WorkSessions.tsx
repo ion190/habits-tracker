@@ -75,6 +75,25 @@ function SessionDetailModal({ session, onClose, onDeleted }: {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 300, overflowY: 'auto' }}>
+{session.tags && session.tags.length > 0 && (
+            <>
+              <h4 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Tags ({session.tags.length})</h4>
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 12 }}>
+                {session.tags.map(tag => (
+                  <span key={tag} style={{ 
+                    fontSize: 11, 
+                    padding: '4px 8px', 
+                    background: 'var(--accent-bg)', 
+                    color: 'var(--accent)',
+                    borderRadius: 6,
+                    border: '1px solid var(--accent-border)'
+                  }}>
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
         {session.tasks.length > 0 ? (
           <>
             <h4 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Tasks ({session.tasks.length})</h4>
@@ -150,6 +169,9 @@ function SessionRow({ session, onDetail }: {
   )
 }
 
+
+
+
 type TimeFilter = 'today' | 'week' | 'month' | '3months' | 'year' | 'all'
 
 // Filter out sessions with obviously corrupted data (NaN, Infinity, negative values)
@@ -170,11 +192,11 @@ function isValidSession(s: CompletedWorkSession): boolean {
   return true
 }
 
-function filterSessions(sessions: CompletedWorkSession[], filter: TimeFilter, categoryFilter: string): CompletedWorkSession[] {
+function filterSessions(sessions: CompletedWorkSession[], filter: TimeFilter, selectedCategoryIds: string[]): CompletedWorkSession[] {
   // First filter by validity (exclude corrupted data like NaN/Infinity)
   let filtered = sessions.filter(s => isValidSession(s))
   // Then apply category and time filters
-  filtered = filtered.filter(s => !categoryFilter || s.categoryId === categoryFilter)
+  filtered = filtered.filter(s => selectedCategoryIds.length === 0 || selectedCategoryIds.includes(s.categoryId))
   const days: Record<TimeFilter, number> = { today: 1, week: 7, month: 30, '3months': 90, year: 365, all: Infinity }
   const cutoff = new Date()
   cutoff.setDate(cutoff.getDate() - (days[filter] || 365))
@@ -188,10 +210,10 @@ export default function WorkSessions() {
   const [loading, setLoading] = useState(true)
   const [showActive, setShowActive] = useState(false)
   const [showStartModal, setShowStartModal] = useState(false)
-  const [showTimeModal, setShowTimeModal] = useState(false)
-  const [showEndModal, setShowEndModal] = useState(false)
+  // const [showTimeModal, setShowTimeModal] = useState(false)
+  // const [showEndModal, setShowEndModal] = useState(false)
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('week')
-  const [categoryFilter, setCategoryFilter] = useState('')
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [detailSession, setDetailSession] = useState<CompletedWorkSession | null>(null)
 
@@ -206,48 +228,66 @@ export default function WorkSessions() {
   }
 
 useEffect(() => {
-    reload()
-    const handleStatusChange = () => {
-      setShowActive(!!localStorage.getItem('activeWorkSession'))
-    }
-    handleStatusChange()
-    window.addEventListener('workSessionStatusChange', handleStatusChange)
-    
-    // Listen for timer click from header - ensure we show active session
-    const handleShowEndModal = () => {
-      if (localStorage.getItem('activeWorkSession')) {
-        setShowActive(true)
+    reload().then(() => {
+      const handleStatusChange = () => {
+        setShowActive(!!localStorage.getItem('activeWorkSession'))
       }
-    }
-    window.addEventListener('showEndWorkSessionModal', handleShowEndModal)
-    
-    // Check for pending modal from overlay
-    const pendingModal = localStorage.getItem('workSessionPendingModal')
-    if (pendingModal === 'time') {
-      setShowTimeModal(true)
-      localStorage.removeItem('workSessionPendingModal')
-    } else if (pendingModal === 'end') {
-      setShowEndModal(true)
-      localStorage.removeItem('workSessionPendingModal')
-    }
-    
-    return () => {
-      window.removeEventListener('workSessionStatusChange', handleStatusChange)
-      window.removeEventListener('showEndWorkSessionModal', handleShowEndModal)
-    }
+      handleStatusChange()
+      window.addEventListener('workSessionStatusChange', handleStatusChange)
+      
+      // Listen for timer click from header - ensure we show active session
+      const handleShowEndModal = () => {
+        if (localStorage.getItem('activeWorkSession')) {
+          setShowActive(true)
+        }
+      }
+      window.addEventListener('showEndWorkSessionModal', handleShowEndModal)
+      
+      // Check for pending modal from overlay
+      const pendingModal = localStorage.getItem('workSessionPendingModal')
+      if (pendingModal === 'time') {
+        // setShowTimeModal(true)
+        localStorage.removeItem('workSessionPendingModal')
+      } else if (pendingModal === 'end') {
+        // setShowEndModal(true)
+        localStorage.removeItem('workSessionPendingModal')
+      }
+      
+      return () => {
+        window.removeEventListener('workSessionStatusChange', handleStatusChange)
+        window.removeEventListener('showEndWorkSessionModal', handleShowEndModal)
+      }
+    })
   }, [])
 
-  const filteredSessions = useMemo(() =>
-    filterSessions(sessions, timeFilter, categoryFilter)
+  const filteredSessionsForList = useMemo(() =>
+    filterSessions(sessions, timeFilter, selectedCategoryIds)
       .filter(s => s.categoryName.toLowerCase().includes(searchTerm.toLowerCase())),
-    [sessions, timeFilter, categoryFilter, searchTerm]
+    [sessions, timeFilter, selectedCategoryIds, searchTerm]
   )
 
-  const weekSessions = filterSessions(sessions, 'week', '')
-  const totalWeekTime = weekSessions.reduce((sum, s) => sum + s.actualDurationSeconds, 0)
-  const avgProductivity = weekSessions.length > 0
-    ? Math.round(weekSessions.reduce((sum, s) => sum + s.productivityPct, 0) / weekSessions.length)
+
+
+  const allCategories = useMemo(() => {
+    const predefined = categories
+    const custom = Array.from(new Set(sessions.map(s => s.categoryId))).map(id => {
+      const session = sessions.find(s => s.categoryId === id)
+      return session ? {
+        id: session.categoryId,
+        name: session.categoryName,
+        color: session.categoryColor,
+      } : null
+    }).filter(Boolean) as any[]
+    return [...predefined, ...custom]
+  }, [categories, sessions])
+
+  const filteredSessions = filterSessions(sessions, timeFilter, selectedCategoryIds)
+  const totalTime = filteredSessions.reduce((sum, s) => sum + s.actualDurationSeconds, 0)
+  const avgProductivity = filteredSessions.length > 0
+    ? Math.round(filteredSessions.reduce((sum, s) => sum + s.productivityPct, 0) / filteredSessions.length)
     : 0
+
+
 
   if (loading) return <div className="page-loading">Loading...</div>
 
@@ -260,7 +300,7 @@ useEffect(() => {
 
   return (
     <div className="page">
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+<div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}> 
         <div>
           <h1>Work Sessions</h1>
           <p className="page-sub">Focused work with productivity tracking</p>
@@ -270,25 +310,8 @@ useEffect(() => {
         </button>
       </div>
 
-      <div className="stats-row">
-        <div className="stat-card">
-          <p className="stat-label">Sessions</p>
-          <p className="stat-value">{weekSessions.length}</p>
-          <p className="stat-sub">this week</p>
-        </div>
-        <div className="stat-card">
-          <p className="stat-label">Total time</p>
-          <p className="stat-value">{formatDuration(totalWeekTime)}</p>
-          <p className="stat-sub">this week</p>
-        </div>
-        <div className="stat-card">
-          <p className="stat-label">Avg productivity</p>
-          <p className="stat-value">{avgProductivity}%</p>
-          <p className="stat-sub">this week</p>
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end' }}>
+      {/* Time + Search Row */}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end', marginBottom: 12 }}>
         <select className="field" style={{ flex: 1, minWidth: 140 }} value={timeFilter} onChange={e => setTimeFilter(e.target.value as TimeFilter)}>
           <option value="today">Today</option>
           <option value="week">This week</option>
@@ -297,23 +320,58 @@ useEffect(() => {
           <option value="year">This year</option>
           <option value="all">All time</option>
         </select>
-        <select className="field" style={{ width: 'auto' }} value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
-          <option value="">All categories</option>
-          {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
-        </select>
-        <input className="field" placeholder="Search..." value={searchTerm}
-          onChange={e => setSearchTerm(e.target.value)} style={{ flex: 1, minWidth: 160 }} />
-        <button className="btn btn-ghost" onClick={() => { setTimeFilter('week'); setCategoryFilter(''); setSearchTerm('') }}>Clear</button>
+        <input className="field" placeholder="Search sessions..." value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)} style={{ flex: 1, minWidth: 200 }} />
+        <button className="btn btn-ghost" onClick={() => { setTimeFilter('week'); setSelectedCategoryIds([]); setSearchTerm('') }}>Reset</button>
+      </div>
+
+      {/* Category Tags Row */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, padding: 8, marginBottom: 16, overflowX: 'auto' }}>
+        Categories ({selectedCategoryIds.length}): 
+        {allCategories.map(cat => (
+          <button
+            key={cat.id}
+            className="btn btn-ghost"
+            style={{
+              padding: '4px 8px',
+              fontSize: 12,
+              background: selectedCategoryIds.includes(cat.id) ? cat.color + '20' : 'var(--bg)',
+              borderColor: selectedCategoryIds.includes(cat.id) ? cat.color : 'var(--border)',
+              color: selectedCategoryIds.includes(cat.id) ? cat.color : 'var(--text)',
+              flexShrink: 0,
+            }}
+            onClick={() => {
+              setSelectedCategoryIds(prev =>
+                prev.includes(cat.id)
+                  ? prev.filter(id => id !== cat.id)
+                  : [...prev, cat.id]
+              )
+            }}
+          >
+            {cat.name}
+          </button>
+        ))}
+        {selectedCategoryIds.length > 0 && (
+          <button
+            className="btn btn-ghost"
+            style={{ fontSize: 12, flexShrink: 0 }}
+            onClick={() => setSelectedCategoryIds([])}
+          >
+            × Clear categories
+          </button>
+        )}
       </div>
 
       <section className="card heatmap-card">
         <h2 className="card-title">Productivity heatmap</h2>
-        <WorkSessionHeatmap sessions={sessions.filter(s => isValidSession(s))} daysBack={365} />
+        <WorkSessionHeatmap sessions={filteredSessions} daysBack={365} />
       </section>
 
+
+
       <section className="card">
-        <h2 className="card-title">Sessions ({filteredSessions.length})</h2>
-        {filteredSessions.length === 0 ? (
+        <h2 className="card-title">Sessions ({filteredSessionsForList.length})</h2>
+        {filteredSessionsForList.length === 0 ? (
           <p className="empty-hint">
             No sessions yet.{' '}
             <button className="btn btn-primary" style={{ fontSize: 12, padding: '4px 10px' }} onClick={() => setShowStartModal(true)}>
@@ -322,27 +380,29 @@ useEffect(() => {
           </p>
         ) : (
           <ul className="item-list">
-            {filteredSessions.slice(0, 20).map(session => (
+            {filteredSessionsForList.slice(0, 20).map(session => (
               <SessionRow
                 key={session.id}
                 session={session}
                 onDetail={() => setDetailSession(session)}
               />
             ))}
-            {filteredSessions.length > 20 && (
+            {filteredSessionsForList.length > 20 && (
               <p style={{ textAlign: 'center', padding: 20, opacity: 0.6 }}>
-                Showing 20 most recent of {filteredSessions.length}
-              </p>
+              Showing 20 most recent of {filteredSessionsForList.length}
+            </p>
             )}
           </ul>
         )}
       </section>
 
-      {detailSession && <SessionDetailModal session={detailSession} onClose={() => setDetailSession(null)} onDeleted={reload} />}
+      {detailSession && (
+        <SessionDetailModal session={detailSession} onClose={() => setDetailSession(null)} onDeleted={reload} />
+      )}
 
-      {showStartModal && (
+{showStartModal && (
         <ModalPortal title="Start Work Session" onClose={() => setShowStartModal(false)}>
-<StartWorkSessionModal
+          <StartWorkSessionModal
             onClose={() => setShowStartModal(false)}
             onStarted={() => {
               setShowStartModal(false)

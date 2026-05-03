@@ -325,6 +325,7 @@ export default function JournalPage() {
             lineHeight: 1.7, resize: 'vertical', outline: 'none',
             fontFamily: 'inherit', boxSizing: 'border-box',
             transition: 'border-color 0.2s',
+            whiteSpace: 'pre-wrap',
           }}
           onFocus={e => e.target.style.borderColor = 'var(--accent-border)'}
           onBlur={e => e.target.style.borderColor = 'var(--border)'}
