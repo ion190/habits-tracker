@@ -23,15 +23,91 @@ const SLOT_H = 56   // px per hour
 const COLORS = ['#aa3bff', '#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#f97316']
 
 // ── Mini month calendar ────────────────────────────────────
-function MiniCalendar({ selected, onChange }: { selected: string; onChange: (d: string) => void }) {
+function MiniCalendar({ selected, onChange, isMobile }: { selected: string; onChange: (d: string) => void; isMobile: boolean }) {
   const [viewDate, setViewDate] = useState(() => new Date(selected + 'T00:00:00'))
   const year  = viewDate.getFullYear()
   const month = viewDate.getMonth()
 
+  const today = toDateKey(new Date())
+
+  // Mobile: show current week only (Mon–Sun)
+  if (isMobile) {
+    const selectedDateObj = new Date(selected + 'T00:00:00')
+    const dayOfWeek = selectedDateObj.getDay() // 0=Sun
+    const mondayOffset = (dayOfWeek + 6) % 7
+    const monday = new Date(selectedDateObj)
+    monday.setDate(selectedDateObj.getDate() - mondayOffset)
+
+    const days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(monday)
+      d.setDate(monday.getDate() + i)
+      const key = toDateKey(d)
+      return {
+        key,
+        dayLabel: d.toLocaleDateString('en-US', { weekday: 'short' }),
+        dayNum: d.getDate(),
+      }
+    })
+
+    return (
+      <div style={{ userSelect: 'none' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <button
+            className="btn btn-ghost"
+            style={{ padding: '2px 8px', fontSize: 13 }}
+            onClick={() => {
+              const d = new Date(selected + 'T00:00:00')
+              d.setDate(d.getDate() - 7)
+              onChange(toDateKey(d))
+            }}
+          >‹</button>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>
+            Week of {new Date(days[0].key + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+          </span>
+          <button
+            className="btn btn-ghost"
+            style={{ padding: '2px 8px', fontSize: 13 }}
+            onClick={() => {
+              const d = new Date(selected + 'T00:00:00')
+              d.setDate(d.getDate() + 7)
+              onChange(toDateKey(d))
+            }}
+          >›</button>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6, textAlign: 'center' }}>
+          {days.map(({ key, dayLabel, dayNum }) => {
+            const isSel = key === selected
+            const isTod = key === today
+            return (
+              <div
+                key={key}
+                onClick={() => onChange(key)}
+                style={{
+                  padding: '8px 0',
+                  borderRadius: 10,
+                  fontSize: 11,
+                  background: isSel ? 'var(--accent)' : isTod ? 'var(--accent-bg)' : 'transparent',
+                  color: isSel ? '#fff' : isTod ? 'var(--accent)' : 'var(--text)',
+                  fontWeight: isSel || isTod ? 700 : 500,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                }}
+                title={key}
+              >
+                <div style={{ fontSize: 10, opacity: 0.75 }}>{dayLabel}</div>
+                <div>{dayNum}</div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
   const firstDay = new Date(year, month, 1).getDay()
   const pad      = firstDay === 0 ? 6 : firstDay - 1
   const daysInMonth = new Date(year, month + 1, 0).getDate()
-  const today    = toDateKey(new Date())
 
   return (
     <div style={{ userSelect: 'none' }}>
@@ -169,12 +245,22 @@ function DayTooltip({ date, tasks, journal, onClose, onAddActivity, onAddTask, o
   })
 
   return (
-    <div style={{
-      position: 'absolute', top: '100%', left: 0, zIndex: 200, marginTop: 4,
-      background: 'var(--bg)', border: '1px solid var(--border)',
-      borderRadius: 12, padding: 16, width: 260,
-      boxShadow: 'var(--shadow)',
-    }}>
+    <div
+      style={{
+        position: 'absolute',
+        top: '100%',
+        left: 0,
+        right: 0,
+        margin: '4px auto 0',
+        zIndex: 200,
+        background: 'var(--bg)',
+        border: '1px solid var(--border)',
+        borderRadius: 12,
+        padding: 16,
+        width: 'min(92vw, 280px)',
+        boxShadow: 'var(--shadow)',
+      }}
+    >
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
         <strong style={{ fontSize: 13 }}>{label}</strong>
         <button className="btn btn-ghost" style={{ padding: '0 4px', fontSize: 16 }}
@@ -253,8 +339,16 @@ export default function CalendarPage() {
   }, [selectedDate])
 
   useEffect(() => {
-    load()
-  }, [selectedDate])
+    let cancelled = false
+    ;(async () => {
+      await load()
+      if (cancelled) return
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedDate, load])
+
 
   useEffect(() => {
     // Scroll to 7am on mount
@@ -292,43 +386,163 @@ export default function CalendarPage() {
     setQuickTaskTitle(''); setQuickTaskDate(null)
   }
 
-  // ── Drag rectangle selection ──────────────────────────────
-  const handleGridMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (dragRef.current || resizeRef.current || e.button !== 0) return
+  // ── Drag rectangle selection (mouse + touch) ─────────────
+  const autoScrollRef = useRef<number | null>(null)
+  const touchLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isPointerDownRef = useRef(false)
+  const selectionStartedRef = useRef(false)
+  const selectionStartedFnRef = selectionStartedRef
 
-    const rect = e.currentTarget.getBoundingClientRect()
-    const startY = e.clientY - rect.top
-    setTempStartMin(Math.round((startY / SLOT_H) * 4) * 15) // snap 15min
+
+  const clearAutoScroll = () => {
+    if (autoScrollRef.current) {
+      window.clearInterval(autoScrollRef.current)
+      autoScrollRef.current = null
+    }
+  }
+
+  const maybeStartAutoScroll = (clientY: number, container: HTMLDivElement) => {
+    if (!isMobile) return
+    const rect = container.getBoundingClientRect()
+    const topGap = clientY - rect.top
+    const bottomGap = rect.bottom - clientY
+
+    clearAutoScroll()
+
+    const threshold = 90
+    let delta = 0
+    if (topGap < threshold) delta = -1
+    else if (bottomGap < threshold) delta = 1
+    else return
+
+    autoScrollRef.current = window.setInterval(() => {
+      if (!scrollRef.current) return
+      scrollRef.current.scrollTop += delta * 10
+    }, 16)
+  }
+
+  const clientYToMin = (clientY: number, container: HTMLDivElement) => {
+    const rect = container.getBoundingClientRect()
+    const y = clientY - rect.top + scrollRef.current!.scrollTop
+    // Since we use absolute positions within the cal-grid, include scroll offset by adjusting y.
+    // Snap 15 minutes
+    return Math.round(((y / SLOT_H) * 4)) * 15
+  }
+
+  const beginSelection = (clientY: number, container: HTMLDivElement) => {
+    if (dragRef.current || resizeRef.current) return
+
+    isPointerDownRef.current = true
+    selectionStartedRef.current = true
+    const startMin = Math.max(0, Math.min(24 * 60 - 15, clientYToMin(clientY, container)))
+
+
+    setTempStartMin(startMin)
+    // For visual preview, use unscrolled coords (we re-render using min->px)
+    const rect = container.getBoundingClientRect()
+    const startY = clientY - rect.top
     setSelection({ startY, currentY: startY })
     setIsSelecting(true)
-    e.preventDefault()
   }
 
-  const handleGridMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isSelecting || !selection || tempStartMin === null) return
-    const rect = e.currentTarget.getBoundingClientRect()
-    const currentY = e.clientY - rect.top
-    setSelection({ ...selection, currentY })
-    const rawEndMin = Math.round((currentY / SLOT_H) * 4) * 15
-    setTempEndMin(Math.max(tempStartMin + 15, Math.min(24*60 - 15, rawEndMin)))
+  const updateSelection = (clientY: number, container: HTMLDivElement) => {
+    if (!isPointerDownRef.current) return
+    if (!isSelecting || tempStartMin === null) return
+
+    const endRaw = clientYToMin(clientY, container)
+    const endMin = Math.max(tempStartMin + 15, Math.min(24 * 60 - 15, endRaw))
+
+    const rect = container.getBoundingClientRect()
+    const currentY = clientY - rect.top
+    setSelection(prev => (prev ? { ...prev, currentY } : prev))
+    setTempEndMin(endMin)
   }
 
-    const handleGridMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isSelecting || !selection || tempStartMin === null) return
+  const endSelection = (clientY: number, container: HTMLDivElement) => {
+    if (!isPointerDownRef.current) return
+    isPointerDownRef.current = false
+    selectionStartedRef.current = false
+    clearAutoScroll()
+
+
+    if (!selection || tempStartMin === null) return
+
+    const startMin = tempStartMin
+    const endMin = tempEndMin ?? Math.max(startMin + 15, Math.min(24 * 60 - 15, clientYToMin(clientY, container)))
 
     setIsSelecting(false)
     setSelection(null)
     setTempStartMin(null)
     setTempEndMin(null)
 
-    const startMin = tempStartMin!
-    const endMin = tempEndMin ?? Math.max(startMin + 15, Math.min(24*60 - 15, Math.round((e.clientY - e.currentTarget.getBoundingClientRect().top) / SLOT_H * 4) * 15))
-
     setNewStartTime(minutesToTime(startMin))
     setNewEndTime(minutesToTime(endMin))
     setEditActivity(undefined)
     setShowForm(true)
   }
+
+  const handleGridPointerDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return
+    if (dragRef.current || resizeRef.current) return
+    const container = e.currentTarget
+    beginSelection(e.clientY, container)
+    e.preventDefault()
+  }
+
+  const handleGridPointerMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isPointerDownRef.current) return
+    if (!scrollRef.current) return
+    const container = e.currentTarget
+    maybeStartAutoScroll(e.clientY, scrollRef.current)
+    updateSelection(e.clientY, container)
+  }
+
+  const handleGridPointerUp = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isPointerDownRef.current) return
+    const container = e.currentTarget
+    endSelection(e.clientY, container)
+  }
+
+  const handleGridTouchStart = (e: React.TouchEvent<HTMLDivElement>) => { // mobile long-press selection
+    if (e.touches.length !== 1) return
+    const touch = e.touches[0]
+    const container = e.currentTarget
+
+    // Long-press to start rectangle selection
+    selectionStartedRef.current = false
+    if (touchLongPressTimer.current) window.clearTimeout(touchLongPressTimer.current)
+    touchLongPressTimer.current = window.setTimeout(() => {
+      beginSelection(touch.clientY, container)
+      setTempEndMin(null)
+    }, 350)
+  }
+
+  const handleGridTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length !== 1) return
+    const touch = e.touches[0]
+    if (!isPointerDownRef.current) return
+    if (!scrollRef.current) return
+
+    maybeStartAutoScroll(touch.clientY, scrollRef.current)
+    updateSelection(touch.clientY, e.currentTarget)
+
+    // Only block scrolling once selection has actually started.
+    if (selectionStartedFnRef.current) e.preventDefault()
+  }
+
+  const handleGridTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (touchLongPressTimer.current) window.clearTimeout(touchLongPressTimer.current)
+    touchLongPressTimer.current = null
+
+    // If we never long-pressed into selection, ignore
+    if (!isPointerDownRef.current || !selectionStartedRef.current) return
+
+    // End selection using last known touch Y if possible
+    const container = e.currentTarget
+    const lastY = e.changedTouches[0]?.clientY ?? 0
+    endSelection(lastY, container)
+  }
+
 
   // ── Single click fallback (right-click or modifier?) - keep old logic as fallback if needed
 
@@ -427,9 +641,10 @@ export default function CalendarPage() {
     }}>
 
       {/* Left panel */}
-      <div style={{ width: 230, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto' }}>
+      <div style={{ width: isMobile ? '100%' : 230, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto' }}>
+
         <div style={{ position: 'relative' }}>
-          <MiniCalendar selected={selectedDate} onChange={d => { setSelectedDate(d); setShowDayTip(false) }} />
+          <MiniCalendar selected={selectedDate} isMobile={isMobile} onChange={d => { setSelectedDate(d); setShowDayTip(false) }} />
 
           {/* Day tooltip trigger */}
           <button
@@ -546,16 +761,22 @@ export default function CalendarPage() {
         <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', position: 'relative' }}>
           <div
             className="cal-grid"
-            onMouseDown={handleGridMouseDown}
-            onMouseMove={handleGridMouseMove}
-            onMouseUp={handleGridMouseUp}
-            onMouseLeave={(e) => {
+            onMouseDown={handleGridPointerDown}
+            onMouseMove={handleGridPointerMove}
+            onMouseUp={handleGridPointerUp}
+            onTouchStart={handleGridTouchStart}
+            onTouchMove={handleGridTouchMove}
+            onTouchEnd={handleGridTouchEnd}
+            touch-action="pan-y"
+            onMouseLeave={() => {
+
               if (isSelecting && tempStartMin !== null) {
                 setIsSelecting(false)
                 setSelection(null)
                 setTempStartMin(null)
               }
             }}
+
             style={{
               position: 'relative',
               height: SLOT_H * 24,
@@ -691,12 +912,23 @@ export default function CalendarPage() {
 
       {/* Activity form panel */}
 {showForm && (
-        <div style={{
-          position: 'fixed', top: 80, right: 20, zIndex: 1000,
-          width: 320, maxHeight: 'calc(100vh - 120px)',
-          background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 14, 
-          padding: 20, boxShadow: 'var(--shadow-xl)', overflowY: 'auto',
-        }}>
+        <div
+          style={{
+            position: 'fixed',
+            inset: isMobile ? 'auto 0 0 0' : '80px auto auto 0',
+            right: isMobile ? 0 : 20,
+            left: isMobile ? 0 : undefined,
+            zIndex: 1000,
+            width: isMobile ? '100%' : 320,
+            maxHeight: isMobile ? 'calc(100vh - 80px)' : 'calc(100vh - 120px)',
+            background: 'var(--bg)',
+            border: '1px solid var(--border)',
+            borderRadius: isMobile ? '14px 14px 0 0' : 14,
+            padding: 20,
+            boxShadow: 'var(--shadow-xl)',
+            overflowY: 'auto',
+          }}
+        >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <h3 style={{ margin: 0, fontSize: 15 }}>{editActivity ? 'Edit Activity' : 'New Activity'}</h3>
             <button className="btn btn-ghost" style={{ padding: '2px 8px', fontSize: 18 }}

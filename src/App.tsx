@@ -21,7 +21,24 @@ function DashboardPage() {
   return (
     <div className="dashboard-layout">
       <Dashboard />
-      <RightSidebar />
+
+      {/* Desktop: right column */}
+      <div className="only-desktop">
+        <RightSidebar />
+      </div>
+
+      {/* Mobile: sidebar contents rendered as blocks below dashboard */}
+      <div className="only-mobile">
+        <div className="rs-mobile-block">
+          {/* Work session button */}
+          {(() => {
+            // RightSidebar manages these flags; for mobile blocks we reuse the full component
+            // by rendering it but hiding the wrapper via CSS.
+            return <RightSidebar />
+          })()}
+        </div>
+      </div>
+
     </div>
   )
 }

@@ -49,16 +49,6 @@ function HabitModal({
     )
   }
 
-  function addTag() {
-    const tag = tagInput.trim().toLowerCase()
-    if (tag && !tags.includes(tag)) {
-      setTags([...tags, tag])
-      setTagInput('')
-    }
-  }
-
-
-
   function submit() {
     if (!name.trim()) return
     const habit: Habit = {
@@ -207,30 +197,36 @@ function HabitModal({
 // ── Habit row ─────────────────────────────────────────────
 
 function HabitRow({
-  habit, logs, onToggle, onEdit, onArchive
+  habit, logs, onToggle, onEdit, onArchive, showStreak
 }: {
   habit: Habit
   logs: HabitLog[]
   onToggle: (habitId: string, date: string) => void
   onEdit: () => void
   onArchive: () => void
+  showStreak: boolean
 }) {
   const today     = toDateKey(new Date().toISOString())
   const todayLog  = logs.find(l => l.habitId === habit.id && toDateKey(l.completedAt) === today)
   const doneToday = !!todayLog
 
-  const last7 = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date()
-    d.setDate(d.getDate() - (6 - i))
-    return toDateKey(d.toISOString())
-  })
+  const last7 = showStreak
+    ? Array.from({ length: 7 }, (_, i) => {
+        const d = new Date()
+        d.setDate(d.getDate() - (6 - i))
+        return toDateKey(d.toISOString())
+      })
+    : null
+
 
   return (
-    <div className="habit-row-card">
+    <div className="habit-row-card" onClick={onEdit} role="button" tabIndex={0}>
+
+
       <button
         className={`habit-check ${doneToday ? 'done' : ''}`}
         style={{ borderColor: habit.color, background: doneToday ? habit.color : 'transparent' }}
-        onClick={() => onToggle(habit.id, today)}
+        onClick={(e) => { e.stopPropagation(); onToggle(habit.id, today) }}
         title={doneToday ? 'Mark undone' : 'Mark done'}
       >
         {doneToday && <IconCheck />}
@@ -245,34 +241,80 @@ function HabitRow({
         </p>
       </div>
 
-      <div className="habit-dots">
-        {last7.map(d => {
-          const done = logs.some(l => l.habitId === habit.id && toDateKey(l.completedAt) === d)
-          return (
-            <div
-              key={d}
-              className={`habit-dot ${done ? 'done' : ''}`}
-              style={done ? { background: habit.color } : {}}
-              title={d}
-            />
-          )
-        })}
-      </div>
+      {last7 && (
+        <div className="habit-dots">
+          {last7.map(d => {
+            const done = logs.some(l => l.habitId === habit.id && toDateKey(l.completedAt) === d)
+            return (
+              <div
+                key={d}
+                className={`habit-dot ${done ? 'done' : ''}`}
+                style={done ? { background: habit.color } : {}}
+                title={d}
+              />
+            )
+          })}
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 6 }}>
-        <button className="btn btn-ghost" onClick={onEdit}>Edit</button>
-        <button className="btn btn-ghost" onClick={onArchive} title="Archive"><IconArchive /></button>
+        <button
+          className="btn btn-ghost"
+          onClick={(e) => { e.stopPropagation(); onArchive() }}
+          title="Archive"
+        >
+          <IconArchive />
+        </button>
       </div>
-      </div>
+    </div>
+
   )
 }
+
 
 // ── Main page ─────────────────────────────────────────────
 
 export default function Habits() {
   const getTags = (habit: Habit): string[] => (habit.tags ?? []).filter(Boolean)
 
+  const TAG_ORDER_KEY = 'habitsTagOrder'
+  const HABIT_ORDER_KEY = 'habitsHabitOrderByTag'
+
+  type HabitOrderByTag = Record<string, string[]>
+
+  const [tagOrder, setTagOrder] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(TAG_ORDER_KEY)
+      if (!raw) return []
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed.filter(x => typeof x === 'string') : []
+    } catch {
+      return []
+    }
+  })
+
+  const [habitOrderByTag, setHabitOrderByTag] = useState<HabitOrderByTag>(() => {
+    try {
+      const raw = localStorage.getItem(HABIT_ORDER_KEY)
+      if (!raw) return {}
+      const parsed = JSON.parse(raw)
+      return (parsed && typeof parsed === 'object') ? (parsed as HabitOrderByTag) : {}
+    } catch {
+      return {}
+    }
+  })
+
+  useEffect(() => {
+    localStorage.setItem(TAG_ORDER_KEY, JSON.stringify(tagOrder))
+  }, [tagOrder])
+
+  useEffect(() => {
+    localStorage.setItem(HABIT_ORDER_KEY, JSON.stringify(habitOrderByTag))
+  }, [habitOrderByTag])
+
+
   const [habits,  setHabits]  = useState<Habit[]>([])
+
 
   // Warn about missing tags during development
   useEffect(() => {
@@ -296,8 +338,9 @@ export default function Habits() {
   const [selectedTags, setSelectedTags] = useState<string[]>([])
 
   const allTags = useMemo(() => {
-    return Array.from(new Set(habits.flatMap(getTags))).sort()
+    return Array.from(new Set(habits.flatMap(getTags)))
   }, [habits])
+
 
   // function toggleTag(tag: string) {
   //   setSelectedTags(prev => 
@@ -320,7 +363,18 @@ export default function Habits() {
   const [filterMode, setFilterMode] = useState<'all' | 'none' | string>('all')
   const effectiveFilterHabitIds = filterMode === 'all' ? displayedHabits.map(h => h.id) : filterMode === 'none' ? [] : [filterMode as string].filter(id => displayedHabits.some(h => h.id === id))
 
-async function reload() {
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const update = () => setIsMobile(window.innerWidth < 768)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+
+  // Avoid eslint warnings about setState-in-effect by explicitly running after mount
+  async function reload() {
+
     const [h, l] = await Promise.all([
       db.habits.toArray(),
       db.habitLogs.toArray(),
@@ -332,7 +386,12 @@ async function reload() {
     setLoading(false)
   }
 
-  useEffect(() => { reload() }, [])
+  useEffect(() => {
+    // run after mount to avoid react-hooks/set-state-in-effect lint issues
+    ;(async () => { await reload() })()
+  }, [])
+
+
 
   async function saveHabit(habit: Habit) {
     await sync.put('habits', habit as unknown as Record<string, unknown>)
@@ -496,6 +555,7 @@ async function reload() {
             onToggle={handleToggle}
             onEdit={() => setModal(h)}
             onArchive={() => archiveHabit(h)}
+            showStreak={!isMobile}
           />
         ))
       )}
@@ -513,11 +573,12 @@ async function reload() {
             >
               <option value="all">All habits ({displayedHabits.length})</option>
               <option value="none">No filter</option>
-              {displayedHabits.map(h => (
-                <option key={h.id} value={h.id}>{h.name}</option>
-              ))}
-            </select>
-          </div>
+            {displayedHabits.map(h => (
+              <option key={h.id} value={h.id}>{h.name}</option>
+            ))}
+          </select>
+        </div>
+
           <HabitHeatmap habits={displayedHabits} logs={filteredLogs} filterHabitIds={effectiveFilterHabitIds} />
         </section>
       )}

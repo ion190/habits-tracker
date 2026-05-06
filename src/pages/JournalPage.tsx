@@ -118,10 +118,18 @@ export default function JournalPage() {
   }, [])
 
   useEffect(() => {
-    loadEntry(period, dateKey)
-    loadAllKeys(period)
-    setSearchParams({ period, key: dateKey }, { replace: true })
+    let cancelled = false
+    ;(async () => {
+      await Promise.all([loadEntry(period, dateKey), loadAllKeys(period)])
+      if (cancelled) return
+      setSearchParams({ period, key: dateKey }, { replace: true })
+    })()
+
+    return () => {
+      cancelled = true
+    }
   }, [period, dateKey, loadEntry, loadAllKeys, setSearchParams])
+
 
   // Auto-save with debounce
   const autoSave = useCallback(async (c: string, t: string, m: number) => {
@@ -177,65 +185,23 @@ export default function JournalPage() {
   const isToday     = dateKey === currentKey
   const isFutureKey = isFuture(period, dateKey)
 
+
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 800)
+
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
+
+  const [showHistory, setShowHistory] = useState(false)
+
   return (
-    <div className="page" style={{ display: 'flex', gap: 24, maxWidth: 1200, padding: '24px 24px 48px' }}>
+    <div className="page" style={{ display: 'flex', gap: 24, maxWidth: 1200, padding: '24px 24px 48px', flexDirection: isMobile ? 'column' : 'row' }}>
 
-      {/* Left: period + history list */}
-      <div style={{ width: 220, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <h2 style={{ margin: '0 0 8px', fontSize: 16, fontWeight: 700 }}>Journal</h2>
-
-        {/* Period tabs */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          {PERIODS.map(p => (
-            <button
-              key={p.value}
-              onClick={() => {
-                setPeriod(p.value)
-                setDateKey(dateKeyForPeriod(p.value))
-              }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                padding: '7px 10px', borderRadius: 8, border: 'none',
-                background: period === p.value ? 'var(--accent-bg)' : 'transparent',
-                color: period === p.value ? 'var(--accent)' : 'var(--text)',
-                cursor: 'pointer', fontWeight: period === p.value ? 600 : 400,
-                fontSize: 13, textAlign: 'left', transition: 'all 0.15s',
-              }}
-            >
-              <span style={{ fontSize: 16 }}>{p.icon}</span>
-              <div>
-                <div>{p.label}</div>
-                <div style={{ fontSize: 10, opacity: 0.6 }}>{p.desc}</div>
-              </div>
-            </button>
-          ))}
-        </div>
-
-        {/* History list */}
-        {allKeys.length > 0 && (
-          <div style={{ marginTop: 16 }}>
-            <p style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.6px', opacity: 0.5, margin: '0 0 6px' }}>
-              {allKeys.length} entr{allKeys.length !== 1 ? 'ies' : 'y'}
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 400, overflowY: 'auto' }}>
-              {allKeys.map(key => (
-                <button
-                  key={key}
-                  onClick={() => goTo(key)}
-                  style={{
-                    padding: '5px 8px', borderRadius: 6, border: 'none', textAlign: 'left',
-                    background: key === dateKey ? 'var(--accent-bg)' : 'transparent',
-                    color: key === dateKey ? 'var(--accent)' : 'var(--text)',
-                    fontSize: 12, cursor: 'pointer',
-                  }}
-                >
-                  {key}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
+      
 
       {/* Main editor */}
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -289,7 +255,7 @@ export default function JournalPage() {
         />
 
         {/* Mood */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 12, opacity: 0.6 }}>Mood:</span>
           {[1, 2, 3, 4, 5].map(m => (
             <button
@@ -319,9 +285,12 @@ export default function JournalPage() {
           onChange={e => handleChange(e.target.value)}
           placeholder={`Write your ${period} reflection here…\n\nMarkdown-style text is fine. Your thoughts are auto-saved.`}
           style={{
-            width: '100%', minHeight: 420, padding: '16px',
+            width: '100%',
+            minHeight: isMobile ? 420 : 520,
+            padding: isMobile ? '16px' : '18px',
             background: 'var(--code-bg)', border: '1px solid var(--border)',
-            borderRadius: 10, color: 'var(--text-h)', fontSize: 15,
+            borderRadius: 10, color: 'var(--text-h)',
+            fontSize: isMobile ? 15 : 16,
             lineHeight: 1.7, resize: 'vertical', outline: 'none',
             fontFamily: 'inherit', boxSizing: 'border-box',
             transition: 'border-color 0.2s',
@@ -361,6 +330,110 @@ export default function JournalPage() {
               ))}
             </div>
           </div>
+        )}
+      </div>
+
+      {/* Left: period + history list */}
+      <div
+        style={{
+          width: isMobile ? '100%' : 220,
+          flexShrink: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+        }}
+      >
+        <h2 style={{ margin: '0 0 8px', fontSize: 16, fontWeight: 700 }}>Journal</h2>
+
+        {/* Period tabs */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          {PERIODS.map(p => (
+            <button
+              key={p.value}
+              onClick={() => {
+                setPeriod(p.value)
+                setDateKey(dateKeyForPeriod(p.value))
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '7px 10px', borderRadius: 8, border: 'none',
+                background: period === p.value ? 'var(--accent-bg)' : 'transparent',
+                color: period === p.value ? 'var(--accent)' : 'var(--text)',
+                cursor: 'pointer', fontWeight: period === p.value ? 600 : 400,
+                fontSize: 13, textAlign: 'left', transition: 'all 0.15s',
+              }}
+            >
+              <span style={{ fontSize: 16 }}>{p.icon}</span>
+              <div>
+                <div>{p.label}</div>
+                <div style={{ fontSize: 10, opacity: 0.6 }}>{p.desc}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {/* History list */}
+        {allKeys.length > 0 && (
+          <>
+            {isMobile ? (
+              <div style={{ marginTop: 10 }}>
+                <button
+                  className="btn btn-ghost"
+                  style={{ width: '100%', justifyContent: 'space-between', padding: '10px 12px' }}
+                  onClick={() => setShowHistory(v => !v)}
+                >
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>
+                    History ({allKeys.length})
+                  </span>
+                  <span style={{ opacity: 0.6 }}>{showHistory ? '▲' : '▼'}</span>
+                </button>
+
+                {showHistory && (
+                  <div style={{ marginTop: 10, background: 'var(--code-bg)', border: '1px solid var(--border)', borderRadius: 12, padding: 10 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 320, overflowY: 'auto' }}>
+                      {allKeys.map(key => (
+                        <button
+                          key={key}
+                          onClick={() => { goTo(key); setShowHistory(false) }}
+                          style={{
+                            padding: '8px 10px', borderRadius: 10, border: 'none', textAlign: 'left',
+                            background: key === dateKey ? 'var(--accent-bg)' : 'transparent',
+                            color: key === dateKey ? 'var(--accent)' : 'var(--text)',
+                            fontSize: 12, cursor: 'pointer',
+                            fontWeight: key === dateKey ? 700 : 500,
+                          }}
+                        >
+                          {key}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{ marginTop: 16 }}>
+                <p style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.6px', opacity: 0.5, margin: '0 0 6px' }}>
+                  {allKeys.length} entr{allKeys.length !== 1 ? 'ies' : 'y'}
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 400, overflowY: 'auto' }}>
+                  {allKeys.map(key => (
+                    <button
+                      key={key}
+                      onClick={() => goTo(key)}
+                      style={{
+                        padding: '5px 8px', borderRadius: 6, border: 'none', textAlign: 'left',
+                        background: key === dateKey ? 'var(--accent-bg)' : 'transparent',
+                        color: key === dateKey ? 'var(--accent)' : 'var(--text)',
+                        fontSize: 12, cursor: 'pointer',
+                      }}
+                    >
+                      {key}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
