@@ -183,14 +183,16 @@ function ActivityForm({ date, activity, onSave, onCancel, onDelete }: {
         onKeyDown={e => e.key === 'Enter' && save()}
         style={{ fontSize: 15, fontWeight: 600 }} />
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-        <label className="form-label">Start
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }} lang="en-GB">
+        <label className="form-label" lang="en-GB">Start
           <input type="time" className="field" value={startTime}
-            onChange={e => setStartTime(e.target.value)} />
+            onChange={e => setStartTime(e.target.value)}
+            pattern="[0-2][0-9]:[0-5][0-9]" style={{ direction: 'ltr' }} />
         </label>
-        <label className="form-label">End
+        <label className="form-label" lang="en-GB">End
           <input type="time" className="field" value={endTime}
-            onChange={e => setEndTime(e.target.value)} />
+            onChange={e => setEndTime(e.target.value)}
+            pattern="[0-2][0-9]:[0-5][0-9]" style={{ direction: 'ltr' }} />
         </label>
       </div>
 
@@ -427,8 +429,9 @@ export default function CalendarPage() {
 
   const clientYToMin = (clientY: number, container: HTMLDivElement) => {
     const rect = container.getBoundingClientRect()
-    const y = clientY - rect.top + scrollRef.current!.scrollTop
-    // Since we use absolute positions within the cal-grid, include scroll offset by adjusting y.
+    // clientY - rect.top gives position relative to grid (rect.top already accounts for scroll)
+    // No need to add scrollTop - it's already included in how rect.top changes
+    const y = clientY - rect.top
     // Snap 15 minutes
     return Math.round(((y / SLOT_H) * 4)) * 15
   }
@@ -979,6 +982,7 @@ export default function CalendarPage() {
       {/* Activity form panel */}
 {showForm && (
         <div
+          lang="en-GB"
           style={{
             position: 'fixed',
             inset: isMobile ? 'auto 0 0 0' : '80px auto auto 0',
