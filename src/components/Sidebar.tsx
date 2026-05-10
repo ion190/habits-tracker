@@ -43,13 +43,17 @@ export default function Sidebar() {
   }, [])
 
   useEffect(() => {
+    // Kick off async load on mount
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData()
+
 
     const handleStorage = () => {
       setIsWorkoutActive(!!localStorage.getItem('activeWorkout'))
       setIsSessionActive(!!localStorage.getItem('activeWorkSession'))
     }
-    const handleSession = () => { handleStorage(); loadData() }
+    const handleSession = () => { handleStorage(); void loadData() }
+
 
     window.addEventListener('storage',               handleStorage)
     window.addEventListener('workoutStatusChange',   handleSession)
@@ -214,29 +218,29 @@ export default function Sidebar() {
 
       {/* Mobile bottom nav */}
       <nav className="bottom-nav">
-        <NavLink to="/dashboard" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`}>
-          <IconGrid /><span>Home</span>
+        <NavLink to="/dashboard" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`} aria-label="Home">
+          <IconGrid />
         </NavLink>
-        <NavLink to="/habits" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`}>
-          <IconCheck /><span>Habits</span>
+        <NavLink to="/habits" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`} aria-label="Habits">
+          <IconCheck />
         </NavLink>
-        <NavLink to="/tasks" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`}>
-          <IconChecklist /><span>Tasks</span>
+        <NavLink to="/tasks" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`} aria-label="Tasks">
+          <IconChecklist />
         </NavLink>
-        <NavLink to="/workouts" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`}>
-          <IconDumbbell /><span>Gym</span>
+        <NavLink to="/workouts" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`} aria-label="Workouts">
+          <IconDumbbell />
         </NavLink>
-        <NavLink to="/work-sessions" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`}>
-          <IconTimer /><span>Focus</span>
+        <NavLink to="/work-sessions" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`} aria-label="Focus">
+          <IconTimer />
         </NavLink>
-        <NavLink to="/journal" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`}>
-          <IconBook /><span>Journal</span>
+        <NavLink to="/journal" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`} aria-label="Journal">
+          <IconBook />
         </NavLink>
-        <NavLink to="/calendar" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`}>
-          <IconCalendar /><span>Calendar</span>
+        <NavLink to="/calendar" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`} aria-label="Calendar">
+          <IconCalendar />
         </NavLink>
-        <NavLink to="/settings" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`}>
-          <IconSettings /><span>Settings</span>
+        <NavLink to="/settings" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`} aria-label="Settings">
+          <IconSettings />
         </NavLink>
       </nav>
     </>

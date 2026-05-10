@@ -2,7 +2,8 @@ import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { db, generateId, dateKeyForPeriod } from '../db/database'
 import type { CalendarActivity, CompletedWorkSession, WorkSessionCategory, JournalEntry, Habit, HabitLog, CompletedWorkout, Task } from '../db/database'
-import { formatDuration, toDateKey, startOfWeek } from '../utils'
+import { formatDuration, toDateKey, startOfWeek, isTaskDueOnDate } from '../utils'
+
 import { sync } from '../db/sync'
 import UnifiedHeatmap from '../components/UnifiedHeatmap'
 import HabitValueModal from '../components/HabitValueModal'
@@ -83,6 +84,7 @@ export default function Dashboard() {
   const [workSessions, setWorkSessions] = useState<CompletedWorkSession[]>([])
   const [workSessionCategories, setWorkSessionCategories] = useState<WorkSessionCategory[]>([])
   const [activeWorkSession, setActiveWorkSession] = useState(null)
+
   const [todayJournal, setTodayJournal] = useState<JournalEntry | null>(null)
   const [activities, setActivities] = useState<CalendarActivity[]>([])
   const [todaysActivities, setTodaysActivities] = useState<CalendarActivity[]>([])
@@ -173,10 +175,12 @@ export default function Dashboard() {
   const todayLogs = logs.filter((l) => toDateKey(l.completedAt) === today)
 
   const todaysTasks = tasks.filter((t) => {
-    if (t.completedAt) return false
-    if (!t.dueDate) return false
-    return toDateKey(t.dueDate) === today
+    if (t.archivedAt) return false
+    // Per-instance completion: completedAt stores the done dateKey instance.
+    if (t.completedAt && toDateKey(t.completedAt) === today) return false
+    return isTaskDueOnDate(t, today)
   })
+
 
   const weekWorkouts = workoutsFromPreviousWeek ? [] : workouts
   const currentWeekTime = weekWorkouts.reduce((s, w) => s + w.totalDurationSeconds, 0)

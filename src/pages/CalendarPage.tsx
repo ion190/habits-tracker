@@ -2,6 +2,8 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { db, generateId } from '../db/database'
 import type { CalendarActivity, Task, JournalEntry } from '../db/database'
 import { sync } from '../db/sync'
+import { isTaskDueOnDate } from '../utils'
+
 
 // ── Helpers ───────────────────────────────────────────────
 function toDateKey(d: Date) { return d.toISOString().slice(0, 10) }
@@ -231,6 +233,7 @@ function ActivityForm({ date, activity, onSave, onCancel, onDelete }: {
 
 // ── Day tooltip (quick-add panel on mini-cal click) ────────
 function DayTooltip({ date, tasks, journal, onClose, onAddActivity, onAddTask, onJournal }: {
+
   date: string
   tasks: Task[]
   journal?: JournalEntry
@@ -239,7 +242,8 @@ function DayTooltip({ date, tasks, journal, onClose, onAddActivity, onAddTask, o
   onAddTask: () => void
   onJournal: () => void
 }) {
-  const dayTasks = tasks.filter(t => t.dueDate?.slice(0, 10) === date)
+  const dayTasks = tasks.filter(t => isTaskDueOnDate(t, date))
+
   const label    = new Date(date + 'T00:00:00').toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric',
   })
@@ -321,6 +325,10 @@ export default function CalendarPage() {
   const [tempStartMin, setTempStartMin] = useState<number | null>(null)
   const [tempEndMin, setTempEndMin] = useState<number | null>(null)
   const [isMobile, setIsMobile] = useState(false)
+
+  // Track selection without relying on async state updates for touch-action.
+  const isSelectingRef = useRef(false)
+
   const scrollRef   = useRef<HTMLDivElement>(null)
   const dragRef     = useRef<{ id: string; offsetMin: number } | null>(null)
   const resizeRef   = useRef<{ id: string; field: 'start' | 'end' } | null>(null)
@@ -434,7 +442,9 @@ export default function CalendarPage() {
 
     isPointerDownRef.current = true
     selectionStartedRef.current = true
+    isSelectingRef.current = true
     const startMin = Math.max(0, Math.min(24 * 60 - 15, clientYToMin(clientY, container)))
+
 
 
     setTempStartMin(startMin)
@@ -462,7 +472,9 @@ export default function CalendarPage() {
     if (!isPointerDownRef.current) return
     isPointerDownRef.current = false
     selectionStartedRef.current = false
+    isSelectingRef.current = false
     clearAutoScroll()
+
 
 
     if (!selection || tempStartMin === null) return
@@ -512,6 +524,8 @@ export default function CalendarPage() {
     selectionStartedRef.current = false
     if (touchLongPressTimer.current) window.clearTimeout(touchLongPressTimer.current)
     touchLongPressTimer.current = window.setTimeout(() => {
+      // Start rectangle selection. Keep normal scroll behavior available
+      // until selection is actually active.
       beginSelection(touch.clientY, container)
       setTempEndMin(null)
     }, 350)
@@ -621,7 +635,8 @@ export default function CalendarPage() {
   }
 
   const todayJournal = journals.get(selectedDate)
-  const todayTasks   = tasks.filter(t => t.dueDate?.slice(0, 10) === selectedDate)
+  const todayTasks   = tasks.filter(t => isTaskDueOnDate(t, selectedDate))
+
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 800)
@@ -758,17 +773,71 @@ export default function CalendarPage() {
         </div>
 
         {/* Scrollable time grid */}
-        <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', position: 'relative' }}>
+        <div
+          ref={scrollRef}
+          style={{ flex: 1, overflowY: 'auto', position: 'relative', WebkitOverflowScrolling: 'touch' }}
+        >
           <div
             className="cal-grid"
             onMouseDown={handleGridPointerDown}
             onMouseMove={handleGridPointerMove}
             onMouseUp={handleGridPointerUp}
+
+            onPointerDown={(e) => {
+              // Enable “draw with cursor” rectangle creation on mobile + desktop.
+              // We keep mouse logic intact for desktop by only handling touch/pen pointers here.
+              if (e.pointerType === 'mouse') return
+              if (e.button !== 0) return
+              const target = e.currentTarget
+              if (dragRef.current || resizeRef.current) return
+
+              // Start selection immediately (no long-press needed), but only for single pointer.
+              // Prevents accidental taps/gestures while selecting.
+              beginSelection(e.clientY, target)
+              e.preventDefault()
+            }}
+            onPointerMove={(e) => {
+              if (e.pointerType === 'mouse') return
+              if (!isPointerDownRef.current) return
+              const target = e.currentTarget
+              if (!scrollRef.current) return
+              maybeStartAutoScroll(e.clientY, scrollRef.current)
+              updateSelection(e.clientY, target)
+              if (selectionStartedRef.current) e.preventDefault()
+            }}
+
+            onPointerUp={(e) => {
+              if (e.pointerType === 'mouse') return
+              if (!isPointerDownRef.current) return
+              const container = e.currentTarget
+              endSelection(e.clientY, container)
+            }}
+            onPointerCancel={(e) => {
+              if (e.pointerType === 'mouse') return
+              if (!isPointerDownRef.current) return
+              clearAutoScroll()
+              isPointerDownRef.current = false
+              selectionStartedRef.current = false
+              setIsSelecting(false)
+              setSelection(null)
+              setTempStartMin(null)
+              setTempEndMin(null)
+              try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* ignore */ }
+            }}
+
+
+            // Keep touch long-press as fallback for cases where pointer events are not supported.
             onTouchStart={handleGridTouchStart}
             onTouchMove={handleGridTouchMove}
             onTouchEnd={handleGridTouchEnd}
-            touch-action="pan-y"
+
+            // Keep vertical scrolling working naturally when not selecting.
+            // (Using React attribute form can be unreliable across browsers.)
+
             onMouseLeave={() => {
+
+
+
 
               if (isSelecting && tempStartMin !== null) {
                 setIsSelecting(false)
@@ -781,6 +850,8 @@ export default function CalendarPage() {
               position: 'relative',
               height: SLOT_H * 24,
               cursor: isSelecting ? 'grabbing' : 'crosshair',
+              // Ensure touch scrolling keeps working when not selecting.
+              touchAction: 'pan-y',
             }}
           >
             {/* Hour lines */}

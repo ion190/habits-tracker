@@ -25,19 +25,25 @@ interface DayData {
   totalWorkoutSeconds: number
 }
 
-function buildDayMap(habits: Habit[], logs: HabitLog[], workouts: CompletedWorkout[]): Map<string, DayData> {
+function buildDayMap(
+  habits: Habit[],
+  logs: HabitLog[],
+  workouts: CompletedWorkout[],
+  days: string[],
+): Map<string, DayData> {
   const map = new Map<string, DayData>()
-  for (let i = 0; i < 364; i++) {
-    const d = new Date()
-    d.setDate(d.getDate() - (363 - i))
-    const key = toDateKey(d.toISOString())
+
+  // Initialize day buckets for exactly the rendered range.
+  for (const key of days) {
     map.set(key, { date: key, habitIds: [], workoutNames: [], totalWorkoutSeconds: 0 })
   }
+
   for (const log of logs) {
     const key = toDateKey(log.completedAt)
     const entry = map.get(key)
     if (entry && !entry.habitIds.includes(log.habitId)) entry.habitIds.push(log.habitId)
   }
+
   for (const w of workouts) {
     const key = toDateKey(w.startedAt)
     const entry = map.get(key)
@@ -46,6 +52,7 @@ function buildDayMap(habits: Habit[], logs: HabitLog[], workouts: CompletedWorko
       entry.totalWorkoutSeconds += w.totalDurationSeconds
     }
   }
+
   return map
 }
 
@@ -75,9 +82,36 @@ function Tooltip({
   y: number
   filter: LegendFilter
 }) {
-  const style: CSSProperties = {
-    position: 'fixed', left: x + 12, top: y - 12, zIndex: 9999, pointerEvents: 'none',
+  // Keep tooltip inside the viewport.
+  // We estimate size via CSS (hm-tooltip has min/max widths); on mobile we also cap height.
+  const TOOLTIP_W = 280
+  const TOOLTIP_H = 240
+  const padding = 12
+
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 375
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 667
+
+  const nextLeft = x + 12
+  const nextTop = y - 12
+
+  let left = nextLeft
+  let top = nextTop
+
+  // Flip vertically if bottom overflows.
+  if (top + TOOLTIP_H + padding > vh) {
+    top = y + 12
   }
+
+  // Clamp horizontally.
+  left = Math.min(Math.max(left, padding), vw - TOOLTIP_W - padding)
+
+  // Clamp vertically.
+  top = Math.min(Math.max(top, padding), vh - TOOLTIP_H - padding)
+
+  const style: CSSProperties = {
+    position: 'fixed', left, top, zIndex: 9999, pointerEvents: 'none',
+  }
+
 
   const { habitIds, showWorkout } = resolveVisible(day, habits, filter)
 
@@ -188,16 +222,31 @@ export default function UnifiedHeatmap({ habits, logs, workouts }: Props) {
   }, [])
 
   const days = useMemo(() => {
+    // Show the prior calendar-year window (not "from January this year").
+    // Inclusive range: [today - 1 year, today].
     const arr: string[] = []
-    for (let i = 0; i < 364; i++) {
-      const d = new Date()
-      d.setDate(d.getDate() - (363 - i))
-      arr.push(toDateKey(d.toISOString()))
+    const end = new Date()
+    end.setHours(0, 0, 0, 0)
+
+    const start = new Date(end)
+    start.setFullYear(start.getFullYear() - 1)
+
+    // Build day-by-day so leap years / DST shifts don't cause missing/extra days.
+    const cur = new Date(start)
+    cur.setHours(0, 0, 0, 0)
+
+    while (cur <= end) {
+      arr.push(toDateKey(cur.toISOString()))
+      cur.setDate(cur.getDate() + 1)
     }
+
     return arr
   }, [])
 
-  const dayMap = useMemo(() => buildDayMap(habits, logs, workouts), [habits, logs, workouts])
+  const dayMap = useMemo(
+    () => buildDayMap(habits, logs, workouts, days),
+    [habits, logs, workouts, days],
+  )
 
   const firstDayOfWeek = new Date(days[0]).getDay()
   const pad = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1

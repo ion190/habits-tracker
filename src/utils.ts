@@ -1,6 +1,8 @@
 import { db } from './db/database'
 import type { Task, Habit, CompletedWorkSession } from './db/database'
 
+
+
 /** Format seconds → '45m' or '1h 23m' (elapsed time) */
 export function formatDuration(seconds: number): string {
   if (seconds <= 0) return '0m'
@@ -133,7 +135,79 @@ export function initializeTheme(): void {
 }
 
 /** Get unique past tags used for a specific item type */
+function parseTaskDueAnchorKey(t: Task): string | null {
+  if (!t.dueDate) return null
+  // dueDate is treated as anchor dateKey: YYYY-MM-DD
+  return t.dueDate.slice(0, 10)
+}
+
+function dayMatchesDateKey(targetDays: number[] | undefined, dateKey: string): boolean {
+  if (!targetDays || targetDays.length === 0) return false
+  const d = new Date(dateKey + 'T00:00:00')
+  const jsDay = d.getDay() // 0=Sun..6=Sat
+  return targetDays.includes(jsDay)
+}
+
+// Returns whether a task instance is due on the given dateKey.
+export function isTaskDueOnDate(task: Task, dateKey: string): boolean {
+  if (task.archivedAt) return false
+
+  // One-off tasks: show if dueDate matches dateKey.
+  if (!task.recurrence) {
+
+    if (!task.dueDate) return false
+    return task.dueDate.slice(0, 10) === dateKey
+  }
+
+  const anchor = parseTaskDueAnchorKey(task)
+  if (!anchor) return false
+
+  const r = task.recurrence
+  // Optional end date
+  if (r.endDate) {
+    const endKey = r.endDate.slice(0, 10)
+    if (dateKey > endKey) return false
+  }
+
+  // If date is before anchor, it isn't due.
+  if (dateKey < anchor) return false
+
+  switch (r.pattern) {
+    case 'daily':
+      return true
+    case 'weekly':
+      return dayMatchesDateKey(r.targetDays, dateKey)
+    case 'monthly': {
+      const [yA, mA] = anchor.split('-').map(Number)
+      const [y, m] = dateKey.split('-').map(Number)
+      return y === yA && m === mA
+    }
+    case 'quarterly': {
+      const [yA, restA] = anchor.split('-')
+      const mA = Number(restA)
+      const qA = Math.ceil(mA / 3)
+      const [y, rest] = dateKey.split('-')
+      const m = Number(rest)
+      const q = Math.ceil(m / 3)
+      return y === yA && q === qA
+    }
+    case 'yearly': {
+      return dateKey.slice(0, 4) === anchor.slice(0, 4)
+    }
+    case 'decadely': {
+      const decadeA = Math.floor(Number(anchor.slice(0, 4)) / 10) * 10
+      const decadeB = Math.floor(Number(dateKey.slice(0, 4)) / 10) * 10
+      return decadeA === decadeB
+    }
+    case 'custom': {
+      // Minimal semantics for now: treat as weekly with targetDays if provided.
+      return dayMatchesDateKey(r.targetDays, dateKey)
+    }
+  }
+}
+
 export async function getPastTags(type: 'task' | 'habit' | 'work'): Promise<string[]> {
+
   let allTags: string[] = []
   
   switch (type) {

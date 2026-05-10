@@ -124,7 +124,7 @@ function getPrompts(period: JournalPeriod): string[] {
 
 function getTemplate(period: JournalPeriod): string {
   const sections: Record<JournalPeriod, string[]> = {
-    daily:     ['## Focus', '## Gratitude', '## Notes', '## End of Day'],
+    daily:     ['## Notes', '## Learnings', '## Gratitude'],
     weekly:    ['Look back on all the diary I wrote for that week. See my mistakes. Make a restart of the mind', '## Goals for This Week', '## This week\'s main topics', '## Wins', '## Challenges', '## Reflections', '## Next Week'],
     monthly:   ['## Monthly Goals', '## Highlights', '## What I Learned', '## Habits & Progress', "## Next Month's Focus"],
     quarterly: ['## Quarterly Goals', '## Progress Review', '## What Worked', "## What Didn't", '## Next Quarter Focus'],

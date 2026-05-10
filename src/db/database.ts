@@ -28,19 +28,47 @@ export interface HabitLog {
   value?: number
 }
 
+export type TaskRecurrencePattern =
+  | 'none'
+  | 'daily'
+  | 'weekly'
+  | 'monthly'
+  | 'quarterly'
+  | 'yearly'
+  | 'decadely'
+  | 'custom'
+
+export interface TaskRecurrence {
+  pattern: Exclude<TaskRecurrencePattern, 'none'>
+  // For weekly/custom:
+  // - 0=Sun..6=Sat (matches JS Date.getDay())
+  targetDays?: number[]
+  // For custom (future expansion): every N of unit
+  interval?: number
+  // Optional end bound
+  endDate?: string
+}
+
 export interface Task {
   id: string
   title: string
   description?: string
-  dueDate?: string
+  dueDate?: string // anchor date for recurring tasks (YYYY-MM-DD)
   notificationTime?: string
+
+  // If recurring, completion is per-instance; the completedAt stores the dateKey instance.
+  // Example: completedAt = '2026-05-10T...' (we treat it as done for the due instance day).
   completedAt?: string
+
   createdAt: string
   tags: string[]
   urgency: 'low' | 'medium' | 'high'
   importance: 'low' | 'medium' | 'high'
   archivedAt?: string
+
+  recurrence?: TaskRecurrence
 }
+
 
 export interface Exercise {
   id: string

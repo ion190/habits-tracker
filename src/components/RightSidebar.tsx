@@ -4,7 +4,9 @@ import { db, generateId } from '../db/database'
 import StartWorkoutModal from './StartWorkoutModal'
 import StartWorkSessionModal from './StartWorkSessionModal'
 import type { Habit, HabitLog, Task, CalendarActivity, JournalEntry } from '../db/database'
-import { toDateKey, startOfWeek } from '../utils'
+import { toDateKey, isTaskDueOnDate } from '../utils'
+
+
 import { sync } from '../db/sync'
 import ModalPortal from './ModalPortal'
 import HabitValueModal from './HabitValueModal'
@@ -78,7 +80,8 @@ function DayPopup({ date, activities, tasks, journal, onClose, onNavigate }: {
 }) {
   const label = new Date(date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
   const dayActs = activities.filter(a => a.date === date)
-  const dayTasks = tasks.filter(t => t.dueDate?.slice(0, 10) === date && !t.completedAt)
+  const dayTasks = tasks.filter(t => isTaskDueOnDate(t, date) && !(t.completedAt && toDateKey(t.completedAt) === date))
+
 
   return (
     <div style={{

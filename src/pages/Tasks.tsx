@@ -1,5 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
+
 import { useSearchParams } from 'react-router-dom'
+
 import { db, generateId } from '../db/database'
 import { getPastTags } from '../utils'
 import { sync } from '../db/sync'
@@ -9,6 +11,7 @@ import { formatDateOnlyGMT3 } from '../utils'
 import Modal from '../components/Modal'
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
 import TaskHeatmap from '../components/TaskHeatmap'
+import TasksMobileQuadrant from './TasksMobileQuadrant'
 
 export default function Tasks() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -17,6 +20,7 @@ export default function Tasks() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [completedTasks, setCompletedTasks] = useState<Task[]>([])
   const [archivedTasks, setArchivedTasks] = useState<Task[]>([])
+
   const [showArchived, setShowArchived] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
@@ -38,15 +42,24 @@ export default function Tasks() {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [dueDate, setDueDate] = useState('')
+
+  const [repeatEnabled, setRepeatEnabled] = useState(false)
+  const [repeatPattern, setRepeatPattern] = useState<'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'decadely' | 'custom'>('weekly')
+  const [repeatTargetDays, setRepeatTargetDays] = useState<number[]>([1,3,5]) // Sun=0..Sat=6
+  const [repeatEndDate, setRepeatEndDate] = useState('')
+
   const [urgency, setUrgency] = useState<'low' | 'medium' | 'high'>('medium')
+
   const [importance, setImportance] = useState<'low' | 'medium' | 'high'>('medium')
   const [tags, setTags] = useState<string[]>([])
   const [tagInput, setTagInput] = useState('')
   const [pastTaskTags, setPastTaskTags] = useState<string[]>([])
 
   // Load tasks
-async function load() {
+  const load = async () => {
     const all = await db.tasks.toArray()
+
+
     const active = all
       .filter(t => !t.archivedAt && !t.completedAt)
       .sort((a, b) => {
@@ -79,10 +92,20 @@ async function load() {
     setArchivedTasks(archived)
   }
 
-  useEffect(() => { 
-    load()
-    getPastTags('task').then(setPastTaskTags)
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      await load()
+      if (cancelled) return
+      const tags = await getPastTags('task')
+      setPastTaskTags(tags)
+    })()
+
+    return () => {
+      cancelled = true
+    }
   }, [])
+
 
   function openNewTask() {
     setEditingTask(null)
@@ -112,12 +135,19 @@ async function load() {
 
   async function save() {
     if (!title.trim()) return
+    if (!dueDate && repeatEnabled) return
 
     const task: Task = {
       id: editingTask?.id ?? generateId(),
       title,
       description: description || undefined,
       dueDate: dueDate || undefined,
+      recurrence: repeatEnabled && dueDate ? {
+        pattern: repeatPattern,
+        targetDays: repeatPattern === 'weekly' || repeatPattern === 'custom' ? repeatTargetDays : undefined,
+        endDate: repeatEndDate || undefined,
+      } : undefined,
+
       notificationTime: undefined,
       completedAt: editingTask?.completedAt ?? undefined,
       createdAt: editingTask?.createdAt ?? new Date().toISOString(),
@@ -174,117 +204,9 @@ async function load() {
   const urgent_not_important = displayedTasks.filter(t => t.urgency === 'high' && t.importance === 'low')
   const not_urgent_not_important = displayedTasks.filter(t => t.urgency === 'low' && t.importance === 'low')
 
-  const Quadrant = ({ title, tasks, color }: { title: string, tasks: Task[], color: string, selectedTaskId?: string | null }) => {
-    return (
-      <div style={{
-        flex: 1,
-        background: `var(--${color}-bg)`,
-        border: `1px solid var(--${color}-border)`,
-        borderRadius: 8,
-        padding: 16,
-        minHeight: 200,
-      }}>
-        <h3 style={{ margin: '0 0 12px 0', color: `var(--${color})`, fontSize: 14, fontWeight: 600 }}>
-          {title}
-        </h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {tasks.length === 0 ? (
-            <p style={{ margin: 0, color: 'var(--text-dim)', fontSize: 12 }}>No tasks</p>
-          ) : (
-            tasks.map(task => (
-              <div
-                key={task.id}
-                id={`quad-task-${task.id}`}
-                style={{
-                  background: 'var(--card-bg)',
-                  border: `2px solid ${task.id === selectedTaskId ? 'var(--accent)' : 'var(--card-border)'}`,
-                  borderRadius: 8,
-                  padding: 12,
-                  cursor: 'pointer',
-                  boxShadow: task.id === selectedTaskId ? '0 0 0 3px rgba(59, 130, 246, 0.1)' : 'none',
-                  transition: 'all 0.2s'
-                }}
-                className="hover:opacity-80"
-                onClick={() => {
-                  if (task.id === selectedTaskId) {
-                    setSearchParams({})
-                  } else {
-                    setSearchParams({ taskId: task.id })
-                  }
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                  <div style={{ flex: 1 }}>
-                    <p style={{ 
-                      margin: '0 0 4px 0', 
-                      fontSize: 14, 
-                      fontWeight: 600,
-                      color: task.id === selectedTaskId ? 'var(--accent)' : 'var(--text)'
-                    }}>
-                      {task.title}
-                    </p>
-                    {task.description && (
-                      <p style={{ margin: '0 0 8px 0', fontSize: 12, color: 'var(--text-dim)' }}>
-                        {task.description}
-                      </p>
-                    )}
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
-                      {task.tags?.map(tag => (
-                        <span
-                          key={tag}
-                          style={{
-                            fontSize: 11,
-                            padding: '2px 6px',
-                            background: 'var(--accent-bg)',
-                            borderRadius: 4,
-                            color: 'var(--accent)',
-                          }}
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                    {task.dueDate && (
-                      <p style={{ margin: 0, fontSize: 11, color: 'var(--text-dim)' }}>
-                        Due: {formatDateOnlyGMT3(task.dueDate)}
-                      </p>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    <button
-                      className="btn btn-sm btn-ghost"
-                      onClick={(e) => { e.stopPropagation(); completeTask(task) }}
-                      title="Mark complete"
-                      style={{ fontSize: 14 }}
-                    >
-                      ✓
-                    </button>
-                    <button
-                      className="btn btn-sm btn-ghost"
-                      onClick={(e) => { e.stopPropagation(); editTask(task) }}
-                      title="Edit"
-                    >
-                      ✎
-                    </button>
-                    <button
-                      className="btn btn-sm btn-ghost"
-                      onClick={(e) => { e.stopPropagation(); archiveTask(task) }}
-                      title="Archive"
-                    >
-                      🗃
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    )
-  }
-
   // All tasks list - above heatmap
   const selectedTask = selectedTaskId ? tasks.find(t => t.id === selectedTaskId) : null
+
 
   useEffect(() => {
     if (selectedTask) {
@@ -296,101 +218,8 @@ async function load() {
     }
   }, [tasks, selectedTaskId])
 
-  const AllTasksList = () => (
-    <section className="card" style={{ marginBottom: 20 }}>
-      <h2 className="card-title" style={{ marginBottom: 12 }}>All Tasks ({displayedTasks.length})</h2>
-      <div style={{ 
-        maxHeight: 400, 
-        overflowY: 'auto', 
-        display: 'flex', 
-        flexDirection: 'column', 
-        gap: 8 
-      }}>
-        {displayedTasks.length === 0 ? (
-          <p style={{ textAlign: 'center', color: 'var(--text-dim)', padding: 40 }}>No active tasks</p>
-        ) : (
-          displayedTasks.map(task => (
-            <div
-              key={task.id}
-              id={`task-${task.id}`}
-              style={{
-                background: 'var(--card-bg)',
-                border: `2px solid ${task.id === selectedTaskId ? 'var(--accent)' : 'var(--card-border)'}`,
-                borderRadius: 8,
-                padding: 12,
-                cursor: 'pointer',
-                boxShadow: task.id === selectedTaskId ? '0 0 0 3px rgba(59, 130, 246, 0.1)' : 'none',
-                transition: 'all 0.2s'
-              }}
-              onClick={() => {
-                if (task.id === selectedTaskId) {
-                  setSearchParams({})
-                } else {
-                  setSearchParams({ taskId: task.id })
-                }
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                <div style={{ flex: 1 }}>
-                  <p style={{ 
-                    margin: '0 0 4px 0', 
-                    fontSize: 14, 
-                    fontWeight: 600,
-                    color: task.id === selectedTaskId ? 'var(--accent)' : 'var(--text)'
-                  }}>
-                    {task.title}
-                  </p>
-                  {task.description && (
-                    <p style={{ margin: '0 0 8px 0', fontSize: 12, color: 'var(--text-dim)' }}>
-                      {task.description}
-                    </p>
-                  )}
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
-                    {task.tags?.map(tag => (
-                      <span
-                        key={tag}
-                        style={{
-                          fontSize: 11,
-                          padding: '2px 6px',
-                          background: 'var(--accent-bg)',
-                          borderRadius: 4,
-                          color: 'var(--accent)',
-                        }}
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                  {task.dueDate && (
-                    <p style={{ margin: 0, fontSize: 11, color: 'var(--text-dim)' }}>
-                      Due: {formatDateOnlyGMT3(task.dueDate)}
-                    </p>
-                  )}
-                </div>
-                <div style={{ display: 'flex', gap: 4, minWidth: 80, justifyContent: 'flex-end' }}>
-                  <button
-                    className="btn btn-sm btn-ghost"
-                    onClick={(e) => { e.stopPropagation(); completeTask(task) }}
-                    title="Mark complete"
-                    style={{ fontSize: 14 }}
-                  >
-                    ✓
-                  </button>
-                  <button
-                    className="btn btn-sm btn-ghost"
-                    onClick={(e) => { e.stopPropagation(); editTask(task) }}
-                    title="Edit"
-                  >
-                    ✎
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </section>
-  )
+  // Inline rendering (avoid nested component definition inside render)
+
 
   const allTasksForHeatmap = [...displayedTasks, ...archivedTasks.filter(t => selectedTags.length === 0 || selectedTags.every(tag => t.tags?.includes(tag)) )]
 
@@ -457,7 +286,101 @@ async function load() {
         </div>
       )}
 
-      <AllTasksList />
+      <section className="card" style={{ marginBottom: 20 }}>
+        <h2 className="card-title" style={{ marginBottom: 12 }}>All Tasks ({displayedTasks.length})</h2>
+        <div style={{
+          maxHeight: 400,
+          overflowY: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+        }}>
+          {displayedTasks.length === 0 ? (
+            <p style={{ textAlign: 'center', color: 'var(--text-dim)', padding: 40 }}>No active tasks</p>
+          ) : (
+            displayedTasks.map(task => (
+              <div
+                key={task.id}
+                id={`task-${task.id}`}
+                style={{
+                  background: 'var(--card-bg)',
+                  border: `2px solid ${task.id === selectedTaskId ? 'var(--accent)' : 'var(--card-border)'}`,
+                  borderRadius: 8,
+                  padding: 12,
+                  cursor: 'pointer',
+                  boxShadow: task.id === selectedTaskId ? '0 0 0 3px rgba(59, 130, 246, 0.1)' : 'none',
+                  transition: 'all 0.2s',
+                }}
+                onClick={() => {
+                  if (task.id === selectedTaskId) {
+                    setSearchParams({})
+                  } else {
+                    setSearchParams({ taskId: task.id })
+                  }
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={{ flex: 1 }}>
+                    <p style={{
+                      margin: '0 0 4px 0',
+                      fontSize: 14,
+                      fontWeight: 600,
+                      color: task.id === selectedTaskId ? 'var(--accent)' : 'var(--text)',
+                    }}>
+                      {task.title}
+                    </p>
+                    {task.description && (
+                      <p style={{ margin: '0 0 8px 0', fontSize: 12, color: 'var(--text-dim)' }}>
+                        {task.description}
+                      </p>
+                    )}
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+                      {task.tags?.map(tag => (
+                        <span
+                          key={tag}
+                          style={{
+                            fontSize: 11,
+                            padding: '2px 6px',
+                            background: 'var(--accent-bg)',
+                            borderRadius: 4,
+                            color: 'var(--accent)',
+                          }}
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                    {task.dueDate && (
+                      <p style={{ margin: 0, fontSize: 11, color: 'var(--text-dim)' }}>
+                        Due: {formatDateOnlyGMT3(task.dueDate)}
+                      </p>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 4, minWidth: 80, justifyContent: 'flex-end' }}>
+                    <button
+                      className="btn btn-sm btn-ghost"
+                      onClick={(e) => { e.stopPropagation(); completeTask(task) }}
+                      title="Mark complete"
+                      style={{ fontSize: 14 }}
+                    >
+                      ✓
+                    </button>
+                    <button
+                      className="btn btn-sm btn-ghost"
+                      onClick={(e) => { e.stopPropagation(); editTask(task) }}
+                      title="Edit"
+                    >
+                      ✎
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
+
+
 
       {/* Task Heatmap */}
       <section className="card heatmap-card">
@@ -466,12 +389,518 @@ async function load() {
       </section>
 
       {/* Eisenhower Matrix */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
-        <Quadrant title="🔴 Do First (Urgent & Important)" tasks={urgent_important} color="danger" selectedTaskId={selectedTaskId} />
-        <Quadrant title="🟠 Schedule (Important, Not Urgent)" tasks={not_urgent_important} color="warning" selectedTaskId={selectedTaskId} />
-        <Quadrant title="🟡 Delegate (Urgent, Not Important)" tasks={urgent_not_important} color="info" selectedTaskId={selectedTaskId} />
-        <Quadrant title="⚪ Eliminate (Neither)" tasks={not_urgent_not_important} color="ghost" selectedTaskId={selectedTaskId} />
+      {/* Desktop (2x2) - hide on mobile */}
+      <div
+        style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}
+        className="tasks-eisenhower-grid tasks-eisenhower-desktop only-desktop"
+      >
+
+        <div style={{
+          flex: 1,
+          background: `var(--danger-bg)`,
+          border: `1px solid var(--danger-border)`,
+          borderRadius: 8,
+          padding: 16,
+          minHeight: 200,
+        }}>
+          <h3 style={{ margin: '0 0 12px 0', color: `var(--danger)`, fontSize: 14, fontWeight: 600 }}>
+            🔴 Do First (Urgent & Important)
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {urgent_important.length === 0 ? (
+              <p style={{ margin: 0, color: 'var(--text-dim)', fontSize: 12 }}>No tasks</p>
+            ) : (
+              urgent_important.map(task => (
+                <div
+                  key={task.id}
+                  style={{
+                    background: 'var(--card-bg)',
+                    border: `2px solid ${task.id === selectedTaskId ? 'var(--accent)' : 'var(--card-border)'}`,
+                    borderRadius: 8,
+                    padding: 12,
+                    cursor: 'pointer',
+                    boxShadow: task.id === selectedTaskId ? '0 0 0 3px rgba(59, 130, 246, 0.1)' : 'none',
+                    transition: 'all 0.2s',
+                  }}
+                  className="hover:opacity-80"
+                  onClick={() => {
+                    if (task.id === selectedTaskId) {
+                      setSearchParams({})
+                    } else {
+                      setSearchParams({ taskId: task.id })
+                    }
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                    <div style={{ flex: 1 }}>
+                      <p
+                        style={{
+                          margin: '0 0 4px 0',
+                          fontSize: 14,
+                          fontWeight: 600,
+                          color: task.id === selectedTaskId ? 'var(--accent)' : 'var(--text)',
+                        }}
+                      >
+                        {task.title}
+                      </p>
+                      {task.description && (
+                        <p style={{ margin: '0 0 8px 0', fontSize: 12, color: 'var(--text-dim)' }}>
+                          {task.description}
+                        </p>
+                      )}
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+                        {task.tags?.map(tag => (
+                          <span
+                            key={tag}
+                            style={{
+                              fontSize: 11,
+                              padding: '2px 6px',
+                              background: 'var(--accent-bg)',
+                              borderRadius: 4,
+                              color: 'var(--accent)',
+                            }}
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                      {task.dueDate && (
+                        <p style={{ margin: 0, fontSize: 11, color: 'var(--text-dim)' }}>
+                          Due: {formatDateOnlyGMT3(task.dueDate)}
+                        </p>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          completeTask(task)
+                        }}
+                        title="Mark complete"
+                        style={{ fontSize: 14 }}
+                      >
+                        ✓
+                      </button>
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          editTask(task)
+                        }}
+                        title="Edit"
+                      >
+                        ✎
+                      </button>
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          archiveTask(task)
+                        }}
+                        title="Archive"
+                      >
+                        🗃
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div style={{
+          flex: 1,
+          background: `var(--warning-bg)`,
+          border: `1px solid var(--warning-border)`,
+          borderRadius: 8,
+          padding: 16,
+          minHeight: 200,
+        }}>
+          <h3 style={{ margin: '0 0 12px 0', color: `var(--warning)`, fontSize: 14, fontWeight: 600 }}>
+            🟠 Schedule (Important, Not Urgent)
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {not_urgent_important.length === 0 ? (
+              <p style={{ margin: 0, color: 'var(--text-dim)', fontSize: 12 }}>No tasks</p>
+            ) : (
+              not_urgent_important.map(task => (
+                <div
+                  key={task.id}
+                  style={{
+                    background: 'var(--card-bg)',
+                    border: `2px solid ${task.id === selectedTaskId ? 'var(--accent)' : 'var(--card-border)'}`,
+                    borderRadius: 8,
+                    padding: 12,
+                    cursor: 'pointer',
+                    boxShadow: task.id === selectedTaskId ? '0 0 0 3px rgba(59, 130, 246, 0.1)' : 'none',
+                    transition: 'all 0.2s',
+                  }}
+                  className="hover:opacity-80"
+                  onClick={() => {
+                    if (task.id === selectedTaskId) {
+                      setSearchParams({})
+                    } else {
+                      setSearchParams({ taskId: task.id })
+                    }
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                    <div style={{ flex: 1 }}>
+                      <p
+                        style={{
+                          margin: '0 0 4px 0',
+                          fontSize: 14,
+                          fontWeight: 600,
+                          color: task.id === selectedTaskId ? 'var(--accent)' : 'var(--text)',
+                        }}
+                      >
+                        {task.title}
+                      </p>
+                      {task.description && (
+                        <p style={{ margin: '0 0 8px 0', fontSize: 12, color: 'var(--text-dim)' }}>
+                          {task.description}
+                        </p>
+                      )}
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+                        {task.tags?.map(tag => (
+                          <span
+                            key={tag}
+                            style={{
+                              fontSize: 11,
+                              padding: '2px 6px',
+                              background: 'var(--accent-bg)',
+                              borderRadius: 4,
+                              color: 'var(--accent)',
+                            }}
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                      {task.dueDate && (
+                        <p style={{ margin: 0, fontSize: 11, color: 'var(--text-dim)' }}>
+                          Due: {formatDateOnlyGMT3(task.dueDate)}
+                        </p>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          completeTask(task)
+                        }}
+                        title="Mark complete"
+                        style={{ fontSize: 14 }}
+                      >
+                        ✓
+                      </button>
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          editTask(task)
+                        }}
+                        title="Edit"
+                      >
+                        ✎
+                      </button>
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          archiveTask(task)
+                        }}
+                        title="Archive"
+                      >
+                        🗃
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div style={{
+          flex: 1,
+          background: `var(--info-bg)`,
+          border: `1px solid var(--info-border)`,
+          borderRadius: 8,
+          padding: 16,
+          minHeight: 200,
+        }}>
+          <h3 style={{ margin: '0 0 12px 0', color: `var(--info)`, fontSize: 14, fontWeight: 600 }}>
+            🟡 Delegate (Urgent, Not Important)
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {urgent_not_important.length === 0 ? (
+              <p style={{ margin: 0, color: 'var(--text-dim)', fontSize: 12 }}>No tasks</p>
+            ) : (
+              urgent_not_important.map(task => (
+                <div
+                  key={task.id}
+                  style={{
+                    background: 'var(--card-bg)',
+                    border: `2px solid ${task.id === selectedTaskId ? 'var(--accent)' : 'var(--card-border)'}`,
+                    borderRadius: 8,
+                    padding: 12,
+                    cursor: 'pointer',
+                    boxShadow: task.id === selectedTaskId ? '0 0 0 3px rgba(59, 130, 246, 0.1)' : 'none',
+                    transition: 'all 0.2s',
+                  }}
+                  className="hover:opacity-80"
+                  onClick={() => {
+                    if (task.id === selectedTaskId) {
+                      setSearchParams({})
+                    } else {
+                      setSearchParams({ taskId: task.id })
+                    }
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                    <div style={{ flex: 1 }}>
+                      <p
+                        style={{
+                          margin: '0 0 4px 0',
+                          fontSize: 14,
+                          fontWeight: 600,
+                          color: task.id === selectedTaskId ? 'var(--accent)' : 'var(--text)',
+                        }}
+                      >
+                        {task.title}
+                      </p>
+                      {task.description && (
+                        <p style={{ margin: '0 0 8px 0', fontSize: 12, color: 'var(--text-dim)' }}>
+                          {task.description}
+                        </p>
+                      )}
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+                        {task.tags?.map(tag => (
+                          <span
+                            key={tag}
+                            style={{
+                              fontSize: 11,
+                              padding: '2px 6px',
+                              background: 'var(--accent-bg)',
+                              borderRadius: 4,
+                              color: 'var(--accent)',
+                            }}
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                      {task.dueDate && (
+                        <p style={{ margin: 0, fontSize: 11, color: 'var(--text-dim)' }}>
+                          Due: {formatDateOnlyGMT3(task.dueDate)}
+                        </p>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          completeTask(task)
+                        }}
+                        title="Mark complete"
+                        style={{ fontSize: 14 }}
+                      >
+                        ✓
+                      </button>
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          editTask(task)
+                        }}
+                        title="Edit"
+                      >
+                        ✎
+                      </button>
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          archiveTask(task)
+                        }}
+                        title="Archive"
+                      >
+                        🗃
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div style={{
+          flex: 1,
+          background: `var(--ghost-bg)`,
+          border: `1px solid var(--ghost-border)`,
+          borderRadius: 8,
+          padding: 16,
+          minHeight: 200,
+        }}>
+          <h3 style={{ margin: '0 0 12px 0', color: `var(--ghost)`, fontSize: 14, fontWeight: 600 }}>
+            ⚪ Eliminate (Neither)
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {not_urgent_not_important.length === 0 ? (
+              <p style={{ margin: 0, color: 'var(--text-dim)', fontSize: 12 }}>No tasks</p>
+            ) : (
+              not_urgent_not_important.map(task => (
+                <div
+                  key={task.id}
+                  style={{
+                    background: 'var(--card-bg)',
+                    border: `2px solid ${task.id === selectedTaskId ? 'var(--accent)' : 'var(--card-border)'}`,
+                    borderRadius: 8,
+                    padding: 12,
+                    cursor: 'pointer',
+                    boxShadow: task.id === selectedTaskId ? '0 0 0 3px rgba(59, 130, 246, 0.1)' : 'none',
+                    transition: 'all 0.2s',
+                  }}
+                  className="hover:opacity-80"
+                  onClick={() => {
+                    if (task.id === selectedTaskId) {
+                      setSearchParams({})
+                    } else {
+                      setSearchParams({ taskId: task.id })
+                    }
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                    <div style={{ flex: 1 }}>
+                      <p
+                        style={{
+                          margin: '0 0 4px 0',
+                          fontSize: 14,
+                          fontWeight: 600,
+                          color: task.id === selectedTaskId ? 'var(--accent)' : 'var(--text)',
+                        }}
+                      >
+                        {task.title}
+                      </p>
+                      {task.description && (
+                        <p style={{ margin: '0 0 8px 0', fontSize: 12, color: 'var(--text-dim)' }}>
+                          {task.description}
+                        </p>
+                      )}
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+                        {task.tags?.map(tag => (
+                          <span
+                            key={tag}
+                            style={{
+                              fontSize: 11,
+                              padding: '2px 6px',
+                              background: 'var(--accent-bg)',
+                              borderRadius: 4,
+                              color: 'var(--accent)',
+                            }}
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                      {task.dueDate && (
+                        <p style={{ margin: 0, fontSize: 11, color: 'var(--text-dim)' }}>
+                          Due: {formatDateOnlyGMT3(task.dueDate)}
+                        </p>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          completeTask(task)
+                        }}
+                        title="Mark complete"
+                        style={{ fontSize: 14 }}
+                      >
+                        ✓
+                      </button>
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          editTask(task)
+                        }}
+                        title="Edit"
+                      >
+                        ✎
+                      </button>
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          archiveTask(task)
+                        }}
+                        title="Archive"
+                      >
+                        🗃
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       </div>
+
+      {/* Mobile (single column) */}
+      <div className="only-mobile" style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
+        <TasksMobileQuadrant
+          title="🔴 Do First (Urgent & Important)"
+          tasks={urgent_important}
+          color="danger"
+          selectedTaskId={selectedTaskId}
+          onSelectTask={(taskId) => setSearchParams({ taskId })}
+          onComplete={completeTask}
+          onEdit={editTask}
+          onArchive={archiveTask}
+        />
+        <TasksMobileQuadrant
+          title="🟠 Schedule (Important, Not Urgent)"
+          tasks={not_urgent_important}
+          color="warning"
+          selectedTaskId={selectedTaskId}
+          onSelectTask={(taskId) => setSearchParams({ taskId })}
+          onComplete={completeTask}
+          onEdit={editTask}
+          onArchive={archiveTask}
+        />
+        <TasksMobileQuadrant
+          title="🟡 Delegate (Urgent, Not Important)"
+          tasks={urgent_not_important}
+          color="info"
+          selectedTaskId={selectedTaskId}
+          onSelectTask={(taskId) => setSearchParams({ taskId })}
+          onComplete={completeTask}
+          onEdit={editTask}
+          onArchive={archiveTask}
+        />
+        <TasksMobileQuadrant
+          title="⚪ Eliminate (Neither)"
+          tasks={not_urgent_not_important}
+          color="ghost"
+          selectedTaskId={selectedTaskId}
+          onSelectTask={(taskId) => setSearchParams({ taskId })}
+          onComplete={completeTask}
+          onEdit={editTask}
+          onArchive={archiveTask}
+        />
+      </div>
+
+
 
       {/* Tasks Done section */}
       <section className="card" style={{ marginBottom: 20 }}>
@@ -636,7 +1065,7 @@ async function load() {
             </div>
 
             <div className="form-label">
-              Due Date
+              Due Date (anchor)
               <input
                 type="date"
                 className="field"
@@ -644,6 +1073,89 @@ async function load() {
                 onChange={(e) => setDueDate(e.target.value)}
               />
             </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={repeatEnabled}
+                  onChange={(e) => setRepeatEnabled(e.target.checked)}
+                />
+                Repeat task
+              </label>
+
+              {repeatEnabled && (
+                <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>
+                  Creates recurring instances; completion is per occurrence.
+                </span>
+              )}
+            </div>
+
+            {repeatEnabled && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
+                <div className="form-label">
+                  Repeat pattern
+                  <select
+                    className="field"
+                    value={repeatPattern}
+                    onChange={(e) => setRepeatPattern(e.target.value as typeof repeatPattern)}
+
+                  >
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="yearly">Yearly</option>
+                    <option value="decadely">Decadely</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                </div>
+
+                {(repeatPattern === 'weekly' || repeatPattern === 'custom') && (
+                  <div className="form-label">
+                    Target days (weekly)
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
+                      {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d, idx) => {
+                        const isOn = repeatTargetDays.includes(idx)
+                        return (
+                          <button
+                            key={d}
+                            type="button"
+                            className="btn btn-sm"
+                            style={{
+                              padding: '6px 10px',
+                              background: isOn ? 'var(--accent-bg)' : 'var(--bg)',
+                              border: `1px solid ${isOn ? 'var(--accent)' : 'var(--border)'}`,
+                              color: isOn ? 'var(--accent)' : 'var(--text)',
+                              borderRadius: 8,
+                              cursor: 'pointer'
+                            }}
+                            onClick={() => {
+                              setRepeatTargetDays(prev =>
+                                prev.includes(idx) ? prev.filter(x => x !== idx) : [...prev, idx]
+                              )
+                            }}
+                          >
+                            {d}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="form-label">
+                  Repeat until (optional)
+                  <input
+                    type="date"
+                    className="field"
+                    value={repeatEndDate}
+                    onChange={(e) => setRepeatEndDate(e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
               <div className="form-label">
