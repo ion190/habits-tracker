@@ -1,11 +1,15 @@
 // src/pages/Settings.tsx
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { exportDatabase, importDatabase, db } from '../db/database'
 import { sync } from '../db/sync'
 import { signOut } from '../db/firebase'
 import { useAuth } from '../components/AuthContext'
 import { IconDownload, IconUpload, IconTrash } from '../components/Icons'
 import { getTheme, setTheme, type Theme } from '../utils'
+import {
+  initAuth, getApiBase, setApiBase, clearApiConfig,
+  isAuthenticated, getToken, type Role,
+} from '../lib/api'
 
 export default function Settings() {
   const { user, profile } = useAuth()
@@ -16,10 +20,46 @@ export default function Settings() {
   const [theme,      setThemeState] = useState<Theme>(getTheme())
   const [signingOut, setSigningOut] = useState(false)
 
+  const [apiUrl,        setApiUrl]        = useState(() => getApiBase())
+const [apiRole,       setApiRole]       = useState<Role>(
+  () => (localStorage.getItem('rituals_api_role') as Role) ?? 'VISITOR'
+)
+const [apiConnected,  setApiConnected]  = useState(() => isAuthenticated())
+const [apiConnecting, setApiConnecting] = useState(false)
+const [apiError,      setApiError]      = useState<string | null>(null)
+
   function flash(type: 'ok' | 'err', msg: string) {
     setStatus({ type, msg })
     setTimeout(() => setStatus(null), 4000)
   }
+
+  async function handleApiConnect() {
+  setApiConnecting(true)
+  setApiError(null)
+  try {
+    setApiBase(apiUrl)
+    // Quick health check first
+    const health = await fetch(`${apiUrl}/health`)
+    if (!health.ok) throw new Error(`Server responded with ${health.status}`)
+    await initAuth(apiRole)
+    setApiConnected(true)
+    flash('ok', `Connected to API as ${apiRole}`)
+  } catch (e) {
+    setApiConnected(false)
+    setApiError((e as Error).message)
+  } finally {
+    setApiConnecting(false)
+  }
+}
+
+function handleApiDisconnect() {
+  clearApiConfig()
+  setApiConnected(false)
+  setApiUrl(getApiBase())
+  setApiRole('VISITOR')
+  setApiError(null)
+  flash('ok', 'Disconnected from API backend.')
+}
 
   function handleThemeChange(t: Theme) {
     setThemeState(t); setTheme(t)
@@ -173,6 +213,100 @@ export default function Settings() {
           </button>
         </div>
       </section>
+
+      {/* ── API Backend ──────────────────────────────────────── */}
+<section className="card settings-section">
+  <h2 className="card-title" style={{ marginBottom: 4 }}>API Backend</h2>
+  <p className="settings-desc" style={{ marginBottom: 12 }}>
+    Connect to the <code>rituals-api</code> REST backend for server-side storage.
+    {' '}<a href={`${apiUrl}/docs`} target="_blank" rel="noreferrer"
+       style={{ color: 'var(--accent)' }}>Open Swagger docs ↗</a>
+  </p>
+
+  {/* Status badge */}
+  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+      padding: '3px 10px', borderRadius: 99, fontSize: 12, fontWeight: 600,
+      background: apiConnected ? 'var(--green-bg, #dcfce7)' : 'var(--muted-bg, #f1f5f9)',
+      color: apiConnected ? 'var(--green, #16a34a)' : 'var(--muted-fg, #64748b)',
+    }}>
+      <span style={{
+        width: 7, height: 7, borderRadius: '50%',
+        background: apiConnected ? '#16a34a' : '#94a3b8',
+        display: 'inline-block',
+      }} />
+      {apiConnected ? `Connected · ${apiRole}` : 'Not connected'}
+    </span>
+    {apiConnected && getToken() && (
+      <span style={{ fontSize: 11, color: 'var(--muted-fg, #94a3b8)' }}>
+        Token: <code style={{ fontSize: 11 }}>{getToken()}</code>
+      </span>
+    )}
+  </div>
+
+  {/* URL input */}
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <label style={{ fontSize: 13, fontWeight: 500 }}>
+      API URL
+      <input
+        type="url"
+        value={apiUrl}
+        onChange={e => { setApiUrl(e.target.value); setApiConnected(false) }}
+        placeholder="http://localhost:3001"
+        style={{
+          display: 'block', marginTop: 4, width: '100%', maxWidth: 340,
+          padding: '7px 10px', borderRadius: 7, border: '1px solid var(--border, #e2e8f0)',
+          background: 'var(--input-bg, #fff)', color: 'inherit', fontSize: 13,
+        }}
+      />
+    </label>
+
+    {/* Role selector */}
+    <div>
+      <span style={{ fontSize: 13, fontWeight: 500 }}>Role (JWT permissions)</span>
+      <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+        {(['ADMIN', 'WRITER', 'VISITOR'] as Role[]).map(r => (
+          <button
+            key={r}
+            className={`btn btn-sm ${apiRole === r ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => { setApiRole(r); setApiConnected(false) }}
+            style={{ fontSize: 12, padding: '4px 12px' }}
+          >
+            {r}
+          </button>
+        ))}
+      </div>
+      <p style={{ fontSize: 11, color: 'var(--muted-fg, #94a3b8)', marginTop: 4 }}>
+        ADMIN = READ+WRITE+DELETE · WRITER = READ+WRITE · VISITOR = READ only
+      </p>
+    </div>
+
+    {/* Error */}
+    {apiError && (
+      <p style={{ fontSize: 12, color: 'var(--red, #ef4444)', margin: 0 }}>
+        ⚠ {apiError}
+      </p>
+    )}
+
+    {/* Connect / Disconnect buttons */}
+    <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+      <button
+        className="btn btn-primary"
+        onClick={handleApiConnect}
+        disabled={apiConnecting || !apiUrl}
+        style={{ fontSize: 13 }}
+      >
+        {apiConnecting ? 'Connecting…' : apiConnected ? 'Reconnect' : 'Connect'}
+      </button>
+      {apiConnected && (
+        <button className="btn btn-secondary" onClick={handleApiDisconnect} style={{ fontSize: 13 }}>
+          Disconnect
+        </button>
+      )}
+    </div>
+  </div>
+</section>
     </div>
   )
 }
