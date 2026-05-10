@@ -2,8 +2,6 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { db, generateId } from '../db/database'
 import type { CalendarActivity, Task, JournalEntry } from '../db/database'
 import { sync } from '../db/sync'
-import { isTaskDueOnDate } from '../utils'
-
 
 // ── Helpers ───────────────────────────────────────────────
 function toDateKey(d: Date) { return d.toISOString().slice(0, 10) }
@@ -233,7 +231,6 @@ function ActivityForm({ date, activity, onSave, onCancel, onDelete }: {
 
 // ── Day tooltip (quick-add panel on mini-cal click) ────────
 function DayTooltip({ date, tasks, journal, onClose, onAddActivity, onAddTask, onJournal }: {
-
   date: string
   tasks: Task[]
   journal?: JournalEntry
@@ -242,8 +239,7 @@ function DayTooltip({ date, tasks, journal, onClose, onAddActivity, onAddTask, o
   onAddTask: () => void
   onJournal: () => void
 }) {
-  const dayTasks = tasks.filter(t => isTaskDueOnDate(t, date))
-
+  const dayTasks = tasks.filter(t => t.dueDate?.slice(0, 10) === date)
   const label    = new Date(date + 'T00:00:00').toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric',
   })
@@ -635,8 +631,7 @@ export default function CalendarPage() {
   }
 
   const todayJournal = journals.get(selectedDate)
-  const todayTasks   = tasks.filter(t => isTaskDueOnDate(t, selectedDate))
-
+  const todayTasks   = tasks.filter(t => t.dueDate?.slice(0, 10) === selectedDate)
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 800)
@@ -656,7 +651,7 @@ export default function CalendarPage() {
     }}>
 
       {/* Left panel */}
-      <div style={{ width: isMobile ? '100%' : 230, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto' }}>
+      <div style={{ width: isMobile ? '100%' : 230, flexShrink: 0, maxHeight: isMobile ? '35vh' : undefined, display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto' }}>
 
         <div style={{ position: 'relative' }}>
           <MiniCalendar selected={selectedDate} isMobile={isMobile} onChange={d => { setSelectedDate(d); setShowDayTip(false) }} />
@@ -743,7 +738,7 @@ export default function CalendarPage() {
       </div>
 
       {/* Calendar grid */}
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {/* Day header */}
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 10 }}>
           <button className="btn btn-ghost" style={{ padding: '4px 10px' }}
