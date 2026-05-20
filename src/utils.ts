@@ -1,3 +1,8 @@
+import { db } from './db/database'
+import type { Task, Habit, CompletedWorkSession } from './db/database'
+
+
+
 /** Format seconds → '45m' or '1h 23m' (elapsed time) */
 export function formatDuration(seconds: number): string {
   if (seconds <= 0) return '0m'
@@ -15,7 +20,6 @@ export function formatCountdown(seconds: number): string {
   return `${m}:${s}`
 }
 
-
 /** ISO date string → 'YYYY-MM-DD' */
 export function toDateKey(iso: string): string {
   return iso.slice(0, 10)
@@ -25,7 +29,7 @@ export function toDateKey(iso: string): string {
 export function startOfWeek(): Date {
   const d = new Date()
   const day = d.getDay()
-  const diff = day === 0 ? 6 : day - 1 // adjust so Mon=0
+  const diff = day === 0 ? 6 : day - 1
   d.setDate(d.getDate() - diff)
   d.setHours(0, 0, 0, 0)
   return d
@@ -41,16 +45,27 @@ export function mondayFirstToSundayFirst(mondayFirstIndex: number): number {
   return mondayFirstIndex === 6 ? 0 : mondayFirstIndex + 1
 }
 
+let _lastTimestamp = 0
+let _counter = 0
+
 /** Generate a simple unique id */
 export function makeId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+  const now = Date.now()
+  if (now === _lastTimestamp) {
+    _counter++
+  } else {
+    _lastTimestamp = now
+    _counter = 0
+  }
+  const random = Math.random().toString(36).slice(2, 9)
+  return _counter > 0 ? `${now}-${random}-${_counter}` : `${now}-${random}`
 }
 
 /** Format date in 24h format with GMT+3 timezone */
 export function formatDateGMT3(isoString: string, options?: { dateOnly?: boolean; timeOnly?: boolean }): string {
   const date = new Date(isoString)
   const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Africa/Cairo', // GMT+3
+    timeZone: 'Africa/Cairo',
     ...(options?.timeOnly ? {
       hour: '2-digit',
       minute: '2-digit',
@@ -123,10 +138,121 @@ function applyTheme(theme: Theme): void {
 export function initializeTheme(): void {
   applyTheme(getTheme())
   
-  // Listen for system theme changes when in auto mode
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     if (getTheme() === 'auto') {
       applyTheme('auto')
     }
   })
 }
+
+/** Get unique past tags used for a specific item type */
+function parseTaskDueAnchorKey(t: Task): string | null {
+  if (!t.dueDate) return null
+  // dueDate is treated as anchor dateKey: YYYY-MM-DD
+  return t.dueDate.slice(0, 10)
+}
+
+function dayMatchesDateKey(targetDays: number[] | undefined, dateKey: string): boolean {
+  if (!targetDays || targetDays.length === 0) return false
+  const d = new Date(dateKey + 'T00:00:00')
+  const jsDay = d.getDay() // 0=Sun..6=Sat
+  return targetDays.includes(jsDay)
+}
+
+// Returns whether a task instance is due on the given dateKey.
+export function isTaskDueOnDate(task: Task, dateKey: string): boolean {
+  if (task.archivedAt) return false
+
+  // One-off tasks: show if dueDate matches dateKey.
+  if (!task.recurrence) {
+
+    if (!task.dueDate) return false
+    return task.dueDate.slice(0, 10) === dateKey
+  }
+
+  const anchor = parseTaskDueAnchorKey(task)
+  if (!anchor) return false
+
+  const r = task.recurrence
+  // Optional end date
+  if (r.endDate) {
+    const endKey = r.endDate.slice(0, 10)
+    if (dateKey > endKey) return false
+  }
+
+  // If date is before anchor, it isn't due.
+  if (dateKey < anchor) return false
+
+  switch (r.pattern) {
+    case 'daily':
+      return true
+    case 'weekly':
+      return dayMatchesDateKey(r.targetDays, dateKey)
+    case 'monthly': {
+      const [yA, mA] = anchor.split('-').map(Number)
+      const [y, m] = dateKey.split('-').map(Number)
+      return y === yA && m === mA
+    }
+    case 'quarterly': {
+      const [yA, restA] = anchor.split('-')
+      const mA = Number(restA)
+      const qA = Math.ceil(mA / 3)
+      const [y, rest] = dateKey.split('-')
+      const m = Number(rest)
+      const q = Math.ceil(m / 3)
+      return y === yA && q === qA
+    }
+    case 'yearly': {
+      return dateKey.slice(0, 4) === anchor.slice(0, 4)
+    }
+    case 'decadely': {
+      const decadeA = Math.floor(Number(anchor.slice(0, 4)) / 10) * 10
+      const decadeB = Math.floor(Number(dateKey.slice(0, 4)) / 10) * 10
+      return decadeA === decadeB
+    }
+    case 'custom': {
+      // Minimal semantics for now: treat as weekly with targetDays if provided.
+      return dayMatchesDateKey(r.targetDays, dateKey)
+    }
+  }
+}
+
+export async function getPastTags(type: 'task' | 'habit' | 'work'): Promise<string[]> {
+
+  let allTags: string[] = []
+  
+  switch (type) {
+    case 'task': {
+      const tasks: Task[] = await db.tasks.toArray()
+      allTags = tasks.flatMap(t => t.tags ?? [])
+      break
+    }
+    
+    case 'habit': {
+      const habits: Habit[] = await db.habits.toArray()
+      allTags = habits.flatMap(h => h.tags ?? [])
+      break
+    }
+    
+    case 'work': {
+      const sessions: CompletedWorkSession[] = await db.completedWorkSessions.toArray()
+      allTags = sessions.flatMap(s => s.tasks.flatMap(t => t.tags ?? []))
+      break
+    }
+  }
+  
+  const tagCount = new Map<string, number>()
+  allTags.forEach(tag => {
+    const normalized = tag.trim().toLowerCase()
+    if (normalized) {
+      tagCount.set(normalized, (tagCount.get(normalized) ?? 0) + 1)
+    }
+  })
+  
+  return Array.from(tagCount.entries())
+    .sort(([,a], [,b]) => b - a)
+    .slice(0, 24)
+    .map(([tag]) => tag)
+    .sort()
+}
+

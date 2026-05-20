@@ -117,11 +117,6 @@ export default function TaskHeatmap({ tasks }: { tasks: Task[] }) {
 
   const completedCount = tasks.filter(t => t.completedAt).length
 
-  console.log('📊 TaskHeatmap data:', { 
-    totalTasks: tasks.length,
-    completedCount,
-    daysWithCompletions: Array.from(dayMap.values()).filter(d => d.count > 0).length
-  })
 
   return (
     <div className="unified-heatmap" style={{ marginTop: 16 }} onMouseMove={handleMouseMove}>

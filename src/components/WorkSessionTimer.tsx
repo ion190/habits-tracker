@@ -1,73 +1,112 @@
-
 import { useEffect, useState, useCallback } from 'react'
 import { formatCountdown } from '../utils'
+import type { ActiveWorkSession } from '../db/database'
+
+// ─── Shared elapsed model (mirrors ActiveWorkSession.tsx) ──
+// Must stay in sync with getElapsed() in ActiveWorkSession.tsx
+function getElapsed(s: ActiveWorkSession): number {
+  const segStart = new Date(s.startedAt).getTime()
+  const segEnd   = s.pausedAt ? new Date(s.pausedAt).getTime() : Date.now()
+  const segSecs  = Math.max(0, Math.floor((segEnd - segStart) / 1000))
+  return (s.totalElapsedSeconds ?? 0) + segSecs
+}
+
+interface TimerState {
+  session:    ActiveWorkSession
+  elapsed:    number   // total seconds elapsed
+  remaining:  number   // seconds left
+  isPaused:   boolean
+  progressPct: number  // 0-100
+}
 
 export default function WorkSessionTimer() {
-  const [remaining, setRemaining] = useState(0)
-  const [isActive, setIsActive] = useState(false)
+  const [state, setState] = useState<TimerState | null>(null)
 
-  const checkActive = useCallback(() => {
+  const refresh = useCallback(() => {
     const raw = localStorage.getItem('activeWorkSession')
-    if (raw) {
-      try {
-        const session = JSON.parse(raw) as any
-        const elapsed = Math.floor((Date.now() - new Date(session.startedAt).getTime()) / 1000)
-        const remaining = session.durationSeconds - elapsed
-        setRemaining(Math.max(0, remaining))
-        setIsActive(true)
-        return true
-      } catch (e) {
-        console.warn('Invalid activeWorkSession:', e)
-        localStorage.removeItem('activeWorkSession')
-      }
-    } else {
-      setIsActive(false)
-      setRemaining(0)
+    if (!raw) { setState(null); return }
+
+    try {
+      const session  = JSON.parse(raw) as ActiveWorkSession
+      const elapsed  = getElapsed(session)
+      const remaining = Math.max(0, session.durationSeconds - elapsed)
+      const isPaused  = !!session.pausedAt
+      const progressPct = session.durationSeconds > 0
+        ? Math.min(100, (elapsed / session.durationSeconds) * 100)
+        : 0
+      setState({ session, elapsed, remaining, isPaused, progressPct })
+    } catch {
+      localStorage.removeItem('activeWorkSession')
+      setState(null)
     }
-    return false
   }, [])
 
   useEffect(() => {
-    checkActive()
-  }, [checkActive])
-
-  useEffect(() => {
-    const handleChange = () => checkActive()
-    window.addEventListener('storage', handleChange)
-    window.addEventListener('workSessionStatusChange', handleChange)
-    const int = setInterval(checkActive, 1000)
+    refresh()
+    window.addEventListener('storage', refresh)
+    window.addEventListener('workSessionStatusChange', refresh)
+    const interval = setInterval(refresh, 1000)
     return () => {
-      window.removeEventListener('storage', handleChange)
-      window.removeEventListener('workSessionStatusChange', handleChange)
-      clearInterval(int)
+      window.removeEventListener('storage', refresh)
+      window.removeEventListener('workSessionStatusChange', refresh)
+      clearInterval(interval)
     }
-  }, [checkActive])
+  }, [refresh])
 
-  if (!isActive || remaining === 0) return null
+  if (!state) return null
 
-  const isLow = remaining < 10
-  const blinkStyle = isLow ? { animation: 'blink 1s infinite' } : {}
+  const { session, remaining, isPaused, progressPct } = state
+  const isLow = remaining < 60 && !isPaused
+
+  // SVG circle progress
+  const r    = 8
+  const circ = 2 * Math.PI * r   // ≈ 50.27
+  const dash = circ * (progressPct / 100)
+  const strokeColor = isLow ? '#f87171' : isPaused ? '#f59e0b' : '#818cf8'
 
   return (
-    <div 
+    <div
       className="header-timer work-session-timer"
-      style={{ 
-        ...blinkStyle,
-        background: 'rgba(239,68,68,0.2)',
-        color: 'var(--danger)',
-        border: '1px solid var(--danger)',
-        fontWeight: 600
+      onClick={() => window.dispatchEvent(new CustomEvent('showEndWorkSessionModal'))}
+      title={`${session.categoryName} — click to manage`}
+      style={{
+        color:        strokeColor,
+        border:       `1px solid ${strokeColor}66`,
+        fontWeight:   600,
+        padding:      '6px 14px',
+        borderRadius: 20,
+        display:      'flex',
+        alignItems:   'center',
+        gap:          10,
+        cursor:       'pointer',
+        transition:   'all 0.3s ease',
+        boxShadow:    `0 0 15px ${strokeColor}33`,
+        animation:    isLow ? 'blink 1s infinite' : 'none',
       }}
-      onClick={() => {
-        if (confirm('End work session early?')) {
-          localStorage.removeItem('activeWorkSession')
-          window.dispatchEvent(new CustomEvent('workSessionStatusChange'))
-        }
-      }}
-      title="Click to end early"
     >
-      {formatCountdown(remaining)}
+      {/* Progress ring */}
+      <svg width="20" height="20" viewBox="0 0 20 20" style={{ flexShrink: 0 }}>
+        <circle cx="10" cy="10" r={r} fill="none" stroke={`${strokeColor}33`} strokeWidth="2" />
+        <circle
+          cx="10" cy="10" r={r}
+          fill="none"
+          stroke={strokeColor}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeDasharray={`${dash} ${circ}`}
+          transform="rotate(-90 10 10)"
+          style={{ transition: 'stroke-dasharray 1s linear' }}
+        />
+      </svg>
+
+      <span style={{
+        fontFamily: 'JetBrains Mono, Monaco, monospace',
+        fontSize:   14,
+        fontWeight: 700,
+        color:      strokeColor,
+      }}>
+        {isPaused ? 'PAUSED' : formatCountdown(remaining)}
+      </span>
     </div>
   )
 }
-

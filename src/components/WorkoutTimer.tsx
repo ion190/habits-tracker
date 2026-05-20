@@ -19,7 +19,7 @@ export default function WorkoutTimer() {
         const elapsedSeconds = Math.floor((Date.now() - new Date(session.startedAt).getTime()) / 1000)
         setElapsed(elapsedSeconds)
       } catch (e) {
-        console.warn('Invalid activeWorkout data:', e)
+        // Invalid activeWorkout data
         localStorage.removeItem('activeWorkout')
       }
     } else {
@@ -33,6 +33,16 @@ export default function WorkoutTimer() {
     checkActive()
   }, [checkActive])
 
+  // Increment timer every second when active
+  useEffect(() => {
+    if (!isActive) return
+    
+    const interval = setInterval(() => {
+      setElapsed(prev => prev + 1)
+    }, 1000)
+    
+    return () => clearInterval(interval)
+  }, [isActive])
 
   // Listen for status changes (cross-tab + custom events)
   useEffect(() => {

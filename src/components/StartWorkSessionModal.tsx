@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { db, generateId } from '../db/database'
-import type { ActiveWorkSession, WorkSessionCategory, WorkSessionTaskSnapshot, Task } from '../db/database'
+import { getPastTags } from '../utils'
+import TagSuggestions from './TagSuggestions'
+import type { WorkSessionTaskSnapshot, Task } from '../db/database'
 
 interface Props {
   onClose: () => void
@@ -8,33 +10,54 @@ interface Props {
 }
 
 export default function StartWorkSessionModal({ onClose, onStarted }: Props) {
-  const [categories, setCategories] = useState<WorkSessionCategory[]>([])
   const [tasks, setTasks] = useState<Task[]>([])
   const [durationMinutes, setDurationMinutes] = useState(25)
-  const [selectedCategory, setSelectedCategory] = useState('')
   const [selectedTasks, setSelectedTasks] = useState<string[]>([])
   const [notes, setNotes] = useState('')
+  const [tags, setTags] = useState<string[]>([])
+  const [tagInput, setTagInput] = useState('')
+  const [pastTags, setPastTags] = useState<string[]>([])
 
   useEffect(() => {
-    Promise.all([
-      db.workSessionCategories.toArray(),
-      db.tasks.filter(t => !t.completedAt && !t.archivedAt).toArray()
-    ]).then(([cats, ts]) => {
-      setCategories(cats)
+    db.tasks.filter(t => !t.completedAt && !t.archivedAt).toArray().then(ts => {
       setTasks(ts)
-      if (cats.length > 0) setSelectedCategory(cats[0].id)
     })
   }, [])
 
+  useEffect(() => {
+    getPastTags('work').then(setPastTags)
+  }, [])
+
+  async function awaitFirstDefaultCategoryId() {
+    const existing = await db.workSessionCategories.orderBy('name').toArray()
+    return existing?.[0]?.id ?? ''
+  }
+
+  async function awaitFirstDefaultCategoryName() {
+    const existing = await db.workSessionCategories.orderBy('name').toArray()
+    return existing?.[0]?.name ?? ''
+  }
+
+  async function awaitFirstDefaultCategoryColor() {
+    const existing = await db.workSessionCategories.orderBy('name').toArray()
+    return existing?.[0]?.color ?? 'var(--accent)'
+  }
+
+  async function awaitFirstDefaultCategoryIcon() {
+    const existing = await db.workSessionCategories.orderBy('name').toArray()
+    return existing?.[0]?.icon ?? '💼'
+  }
+
   const toggleTask = (taskId: string) => {
+
     setSelectedTasks(prev =>
       prev.includes(taskId) ? prev.filter(id => id !== taskId) : [...prev, taskId]
     )
   }
 
-  const startSession = () => {
-    const category = categories.find(c => c.id === selectedCategory)
-    if (!category || durationMinutes <= 0) return
+  const startSession = async () => {
+
+    if (durationMinutes <= 0) return
 
     const selectedTaskSnapshots: WorkSessionTaskSnapshot[] = selectedTasks.map(taskId => {
       const task = tasks.find(t => t.id === taskId)
@@ -43,19 +66,46 @@ export default function StartWorkSessionModal({ onClose, onStarted }: Props) {
         : { taskId, title: 'Unknown', tags: [] }
     })
 
-    const session: ActiveWorkSession = {
+const session = {
       id: generateId(),
-      categoryId: category.id,
-      categoryName: category.name,
-      categoryColor: category.color,
-      categoryIcon: category.icon,
       durationSeconds: durationMinutes * 60,
       notes: notes.trim() || undefined,
+      tags,
       tasks: selectedTaskSnapshots,
       startedAt: new Date().toISOString(),
     }
 
-    localStorage.setItem('activeWorkSession', JSON.stringify(session))
+    // Ensure category metadata exists on the active session.
+    // WorkSessions page filters out sessions missing categoryId/categoryName.
+    const storedCategory = localStorage.getItem('workSessionCategory')
+    const parsedCategory = storedCategory ? JSON.parse(storedCategory) : null
+
+    const categoryId = parsedCategory?.id ?? ''
+
+    const categoryName = parsedCategory?.name ?? ''
+    const categoryColor = parsedCategory?.color ?? 'var(--accent)'
+    const categoryIcon = parsedCategory?.icon ?? '💼'
+
+    // Fallback: if category isn't selected (or not stored), pick the first default category
+    // so sessions can be displayed.
+    const safeCategoryId = categoryId || (await awaitFirstDefaultCategoryId())
+
+    const safeCategoryName = categoryName || (await awaitFirstDefaultCategoryName())
+    const safeCategoryColor = categoryColor || (await awaitFirstDefaultCategoryColor())
+    const safeCategoryIcon = categoryIcon || (await awaitFirstDefaultCategoryIcon())
+
+
+
+    const sessionWithCategory = {
+      ...session,
+      categoryId: safeCategoryId,
+      categoryName: safeCategoryName,
+      categoryColor: safeCategoryColor,
+      categoryIcon: safeCategoryIcon,
+    }
+
+
+    localStorage.setItem('activeWorkSession', JSON.stringify(sessionWithCategory))
     window.dispatchEvent(new CustomEvent('workSessionStatusChange'))
     onStarted()
   }
@@ -64,25 +114,36 @@ export default function StartWorkSessionModal({ onClose, onStarted }: Props) {
     <div style={{ maxWidth: 500 }}>
       <div className="form-label">
         Duration (minutes)
-        <input
-          type="number"
-          className="field"
-          min="1"
-          max="240"
-          value={durationMinutes}
-          onChange={e => setDurationMinutes(+e.target.value)}
-          style={{ fontSize: 24, textAlign: 'center', fontWeight: 600 }}
-        />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '0 2rem' }}>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => setDurationMinutes(Math.max(5, durationMinutes - 5))}
+            style={{ fontSize: 20, fontWeight: 600, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8 }}
+          >
+            −
+          </button>
+          <input
+            // type="number"
+            className="field"
+            min="5"
+            max="240"
+            value={durationMinutes}
+            onChange={e => setDurationMinutes(Math.max(5, +e.target.value))}
+            style={{ fontSize: 28, textAlign: 'center', fontWeight: 700, width: 80, color: 'var(--accent)', background: 'transparent', border: 'none' }}
+          />
+          <button
+            type="button"
+            className="btn"
+            onClick={() => setDurationMinutes(Math.min(240, durationMinutes + 5))}
+            style={{ fontSize: 20, fontWeight: 600, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8 }}
+          >
+            +
+          </button>
+        </div>
       </div>
 
-      <div className="form-label">
-        Category
-        <select className="field" value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)}>
-          {categories.map(cat => (
-            <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
-          ))}
-        </select>
-      </div>
+
 
       <div className="form-label">
         Tasks (optional)
@@ -118,6 +179,13 @@ export default function StartWorkSessionModal({ onClose, onStarted }: Props) {
         )}
       </div>
 
+      <TagSuggestions
+        pastTags={pastTags}
+        currentTags={tags}
+        onChange={setTags}
+        inputValue={tagInput}
+        onInputChange={setTagInput}
+      />
       <div className="form-label">
         Notes (optional)
         <textarea
@@ -133,8 +201,9 @@ export default function StartWorkSessionModal({ onClose, onStarted }: Props) {
         <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
         <button
           className="btn btn-primary"
-          onClick={startSession}
-          disabled={!selectedCategory || durationMinutes <= 0}
+          onClick={() => { void startSession() }}
+
+          disabled={durationMinutes <= 0}
         >
           Start Session ({durationMinutes}m)
         </button>

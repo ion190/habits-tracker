@@ -9,6 +9,15 @@ interface Props {
   workouts: CompletedWorkout[]
 }
 
+// Multi-select filter: empty habitIds + workout=false means "show all"
+interface LegendFilter {
+  habitIds: string[]
+  workout: boolean
+}
+
+const FILTER_ALL: LegendFilter = { habitIds: [], workout: false }
+const isFilterAll = (f: LegendFilter) => f.habitIds.length === 0 && !f.workout
+
 interface DayData {
   date: string
   habitIds: string[]
@@ -16,19 +25,25 @@ interface DayData {
   totalWorkoutSeconds: number
 }
 
-function buildDayMap(habits: Habit[], logs: HabitLog[], workouts: CompletedWorkout[]): Map<string, DayData> {
+function buildDayMap(
+  habits: Habit[],
+  logs: HabitLog[],
+  workouts: CompletedWorkout[],
+  days: string[],
+): Map<string, DayData> {
   const map = new Map<string, DayData>()
-  for (let i = 0; i < 364; i++) {
-    const d = new Date()
-    d.setDate(d.getDate() - (363 - i))
-    const key = toDateKey(d.toISOString())
+
+  // Initialize day buckets for exactly the rendered range.
+  for (const key of days) {
     map.set(key, { date: key, habitIds: [], workoutNames: [], totalWorkoutSeconds: 0 })
   }
+
   for (const log of logs) {
     const key = toDateKey(log.completedAt)
     const entry = map.get(key)
     if (entry && !entry.habitIds.includes(log.habitId)) entry.habitIds.push(log.habitId)
   }
+
   for (const w of workouts) {
     const key = toDateKey(w.startedAt)
     const entry = map.get(key)
@@ -37,69 +52,166 @@ function buildDayMap(habits: Habit[], logs: HabitLog[], workouts: CompletedWorko
       entry.totalWorkoutSeconds += w.totalDurationSeconds
     }
   }
+
   return map
 }
 
-function Tooltip({ day, habits, x, y }: { day: DayData; habits: Habit[]; x: number; y: number }) {
-  const style: CSSProperties = {
-    position: 'fixed', left: x + 12, top: y - 12, zIndex: 9999, pointerEvents: 'none',
+/** Resolve which habit IDs and whether workouts are visible for a given day + filter. */
+function resolveVisible(day: DayData, habits: Habit[], filter: LegendFilter) {
+  const showAll = isFilterAll(filter)
+  const existingIds = new Set(habits.map((h) => h.id))
+  // Always strip IDs for habits that no longer exist (deleted habits leave orphan log entries)
+  const validDayHabitIds = day.habitIds.filter((id) => existingIds.has(id))
+  const habitIds = showAll
+    ? validDayHabitIds
+    : validDayHabitIds.filter((id) => filter.habitIds.includes(id))
+  const showWorkout = showAll ? day.workoutNames.length > 0 : filter.workout && day.workoutNames.length > 0
+  return { habitIds, showWorkout }
+}
+
+function Tooltip({
+  day,
+  habits,
+  x,
+  y,
+  filter,
+}: {
+  day: DayData
+  habits: Habit[]
+  x: number
+  y: number
+  filter: LegendFilter
+}) {
+  // Keep tooltip inside the viewport.
+  // We estimate size via CSS (hm-tooltip has min/max widths); on mobile we also cap height.
+  const TOOLTIP_W = 280
+  const TOOLTIP_H = 240
+  const padding = 12
+
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 375
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 667
+
+  const nextLeft = x + 12
+  const nextTop = y - 12
+
+  let left = nextLeft
+  let top = nextTop
+
+  // Flip vertically if bottom overflows.
+  if (top + TOOLTIP_H + padding > vh) {
+    top = y + 12
   }
-  const completedHabits = day.habitIds.map(hid => habits.find(h => h.id === hid)).filter(Boolean) as Habit[]
+
+  // Clamp horizontally.
+  left = Math.min(Math.max(left, padding), vw - TOOLTIP_W - padding)
+
+  // Clamp vertically.
+  top = Math.min(Math.max(top, padding), vh - TOOLTIP_H - padding)
+
+  const style: CSSProperties = {
+    position: 'fixed', left, top, zIndex: 9999, pointerEvents: 'none',
+  }
+
+
+  const { habitIds, showWorkout } = resolveVisible(day, habits, filter)
+
+  const visibleHabits = habitIds
+    .map((hid) => habits.find((h) => h.id === hid))
+    .filter((h): h is Habit => h !== undefined)
+
   const dateStr = new Date(day.date + 'T00:00:00').toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   })
+
+  const hasAnything = visibleHabits.length > 0 || showWorkout
+
   return (
     <div className="hm-tooltip" style={style}>
       <p className="hm-tooltip-date">{dateStr}</p>
-      {completedHabits.length > 0 && (
+      {visibleHabits.length > 0 && (
         <div className="hm-tooltip-section">
-          <p className="hm-tooltip-label">Habits ({completedHabits.length})</p>
+          <p className="hm-tooltip-label">Habits ({visibleHabits.length})</p>
           <div className="hm-tooltip-habits">
-            {completedHabits.map(h => (
-              <span key={h.id} className="hm-tooltip-tag" style={{ background: h.color + '22', borderColor: h.color + '55', color: h.color }}>
-                <span className="hm-tooltip-dot" style={{ background: h.color }} />{h.name}
+            {visibleHabits.map((h) => (
+              <span
+                key={h.id}
+                className="hm-tooltip-tag"
+                style={{ background: h.color + '22', borderColor: h.color + '55', color: h.color }}
+              >
+                <span className="hm-tooltip-dot" style={{ background: h.color }} />
+                {h.name}
               </span>
             ))}
           </div>
         </div>
       )}
-      {day.workoutNames.length > 0 && (
+      {showWorkout && (
         <div className="hm-tooltip-section">
           <p className="hm-tooltip-label">Workouts ({day.workoutNames.length})</p>
           <div className="hm-tooltip-workouts">
             {day.workoutNames.map((name, i) => (
-              <span key={i} className="hm-tooltip-tag" style={{ background: 'rgba(34,197,94,0.12)', borderColor: 'rgba(34,197,94,0.4)', color: '#22c55e' }}>
+              <span
+                key={i}
+                className="hm-tooltip-tag"
+                style={{ background: 'rgba(34,197,94,0.12)', borderColor: 'rgba(34,197,94,0.4)', color: '#22c55e' }}
+              >
                 🏋️ {name}
               </span>
             ))}
           </div>
         </div>
       )}
-      {day.habitIds.length === 0 && day.workoutNames.length === 0 && (
+      {!hasAnything && (
         <p className="hm-tooltip-empty">No activity</p>
       )}
     </div>
   )
 }
 
-function CellContent({ day, habits }: { day: DayData; habits: Habit[] }) {
-  const hasActivity = day.habitIds.length > 0 || day.workoutNames.length > 0
-  if (!hasActivity) return null
+function CellContent({
+  day,
+  habits,
+  filter,
+}: {
+  day: DayData
+  habits: Habit[]
+  filter: LegendFilter
+}) {
+  const { habitIds, showWorkout } = resolveVisible(day, habits, filter)
+
+  // One color entry per individual activity — deleted habits already excluded by resolveVisible
+  const colors: string[] = [
+    ...habitIds.map((hid) => habits.find((h) => h.id === hid)!.color),
+    ...(showWorkout ? day.workoutNames.map(() => 'var(--workout-color)') : []),
+  ]
+
+  const n = colors.length
+  if (n === 0) return null
+  if (n === 1) return <div style={{ backgroundColor: colors[0], width: '100%', height: '100%' }} />
+
+  // n equal pizza slices — exactly one per activity, no clamping or modulo
+  const step = 360 / n
+  const gradient = colors
+    .map((c, i) => `${c} ${i * step}deg ${(i + 1) * step}deg`)
+    .join(', ')
+
   return (
-    <div className="hm-segments">
-      {day.habitIds.map(hid => {
-        const h = habits.find(x => x.id === hid)
-        if (!h) return null
-        return <div key={hid} className="hm-seg" style={{ background: h.color }} />
-      })}
-      {day.workoutNames.length > 0 && <div className="hm-seg hm-seg-workout" />}
-    </div>
+    <div
+      style={{
+        backgroundImage: `conic-gradient(${gradient})`,
+        width: '100%',
+        height: '100%',
+        borderRadius: 3,
+      }}
+    />
   )
 }
 
 export default function UnifiedHeatmap({ habits, logs, workouts }: Props) {
   const [hovered, setHovered] = useState<DayData | null>(null)
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
+  const [legendFilter, setLegendFilter] = useState<LegendFilter>(FILTER_ALL)
+
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -110,16 +222,31 @@ export default function UnifiedHeatmap({ habits, logs, workouts }: Props) {
   }, [])
 
   const days = useMemo(() => {
+    // Show the prior calendar-year window (not "from January this year").
+    // Inclusive range: [today - 1 year, today].
     const arr: string[] = []
-    for (let i = 0; i < 364; i++) {
-      const d = new Date()
-      d.setDate(d.getDate() - (363 - i))
-      arr.push(toDateKey(d.toISOString()))
+    const end = new Date()
+    end.setHours(0, 0, 0, 0)
+
+    const start = new Date(end)
+    start.setFullYear(start.getFullYear() - 1)
+
+    // Build day-by-day so leap years / DST shifts don't cause missing/extra days.
+    const cur = new Date(start)
+    cur.setHours(0, 0, 0, 0)
+
+    while (cur <= end) {
+      arr.push(toDateKey(cur.toISOString()))
+      cur.setDate(cur.getDate() + 1)
     }
+
     return arr
   }, [])
 
-  const dayMap = useMemo(() => buildDayMap(habits, logs, workouts), [habits, logs, workouts])
+  const dayMap = useMemo(
+    () => buildDayMap(habits, logs, workouts, days),
+    [habits, logs, workouts, days],
+  )
 
   const firstDayOfWeek = new Date(days[0]).getDay()
   const pad = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1
@@ -145,6 +272,22 @@ export default function UnifiedHeatmap({ habits, logs, workouts }: Props) {
     setMousePos({ x: e.clientX, y: e.clientY })
   }, [])
 
+  /** Toggle a single habit in the multi-select filter. */
+  const toggleHabit = useCallback((habitId: string) => {
+    setLegendFilter((prev) => {
+      const already = prev.habitIds.includes(habitId)
+      const nextHabitIds = already
+        ? prev.habitIds.filter((id) => id !== habitId)
+        : [...prev.habitIds, habitId]
+      return { habitIds: nextHabitIds, workout: prev.workout }
+    })
+  }, [])
+
+  /** Toggle workout in the multi-select filter. */
+  const toggleWorkout = useCallback(() => {
+    setLegendFilter((prev) => ({ habitIds: prev.habitIds, workout: !prev.workout }))
+  }, [])
+
   return (
     <div className="unified-heatmap" onMouseMove={handleMouseMove}>
       <div className="hm-scroll" ref={scrollRef}>
@@ -158,12 +301,16 @@ export default function UnifiedHeatmap({ habits, logs, workouts }: Props) {
         >
           {/* Month labels */}
           {Array.from({ length: totalCols }).map((_, col) => {
-            const label = labels.find(l => l.col === col)
+            const label = labels.find((l) => l.col === col)
             return (
-              <div key={`m${col}`} className="hm-month" style={{
-                gridRow: 1, gridColumn: col + 1,
-                textAlign: 'left', whiteSpace: 'nowrap', fontSize: 11, color: 'var(--text)',
-              }}>
+              <div
+                key={`m${col}`}
+                className="hm-month"
+                style={{
+                  gridRow: 1, gridColumn: col + 1,
+                  textAlign: 'left', whiteSpace: 'nowrap', fontSize: 11, color: 'var(--text)',
+                }}
+              >
                 {label?.month ?? ''}
               </div>
             )
@@ -177,7 +324,8 @@ export default function UnifiedHeatmap({ habits, logs, workouts }: Props) {
           {/* Day cells */}
           {days.map((d, i) => {
             const day = dayMap.get(d)!
-            const hasActivity = day.habitIds.length > 0 || day.workoutNames.length > 0
+            const { habitIds, showWorkout } = resolveVisible(day, habits, legendFilter)
+            const hasActivity = habitIds.length > 0 || showWorkout
             const col = Math.floor((pad + i) / 7) + 1
             const row = ((pad + i) % 7) + 2
             return (
@@ -191,7 +339,7 @@ export default function UnifiedHeatmap({ habits, logs, workouts }: Props) {
                 tabIndex={0}
                 aria-label={`${d}: ${day.habitIds.length} habits, ${day.workoutNames.length} workouts`}
               >
-                <CellContent day={day} habits={habits} />
+                <CellContent day={day} habits={habits} filter={legendFilter} />
               </div>
             )
           })}
@@ -199,24 +347,53 @@ export default function UnifiedHeatmap({ habits, logs, workouts }: Props) {
       </div>
 
       {/* Legend */}
-      <div className="hm-legend-row">
-        <div className="hm-legend-item">
+      <div className="hm-legend-row" role="group" aria-label="Unified heatmap legend">
+        {/* "All" resets the filter */}
+        <button
+          type="button"
+          className="hm-legend-item hm-legend-button"
+          onClick={() => setLegendFilter(FILTER_ALL)}
+          aria-pressed={isFilterAll(legendFilter)}
+        >
           <div className="hm-legend-dot" style={{ background: 'var(--border)' }} />
-          <span>None</span>
-        </div>
-        {habits.slice(0, 5).map(h => (
-          <div key={h.id} className="hm-legend-item">
-            <div className="hm-legend-dot" style={{ background: h.color }} />
-            <span>{h.name}</span>
-          </div>
-        ))}
-        <div className="hm-legend-item">
-          <div className="hm-legend-dot" style={{ background: 'var(--workout-color)' }} />
-          <span>Workout</span>
-        </div>
+          <span>All</span>
+        </button>
+
+        {habits.slice(0, 5).map((h) => {
+          const active = legendFilter.habitIds.includes(h.id)
+          return (
+            <button
+              key={h.id}
+              type="button"
+              className={`hm-legend-item hm-legend-button ${active ? 'hm-legend-button-active' : ''}`}
+              onClick={() => toggleHabit(h.id)}
+              aria-pressed={active}
+            >
+              <div className="hm-legend-dot" style={{ background: h.color }} />
+              <span>{h.name}</span>
+            </button>
+          )
+        })}
+
+        {(() => {
+          const active = legendFilter.workout
+          return (
+            <button
+              type="button"
+              className={`hm-legend-item hm-legend-button ${active ? 'hm-legend-button-active' : ''}`}
+              onClick={toggleWorkout}
+              aria-pressed={active}
+            >
+              <div className="hm-legend-dot" style={{ background: 'var(--workout-color)' }} />
+              <span>Workout</span>
+            </button>
+          )
+        })()}
       </div>
 
-      {hovered && <Tooltip day={hovered} habits={habits} x={mousePos.x} y={mousePos.y} />}
+      {hovered && (
+        <Tooltip day={hovered} habits={habits} x={mousePos.x} y={mousePos.y} filter={legendFilter} />
+      )}
     </div>
   )
 }

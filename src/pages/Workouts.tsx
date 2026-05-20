@@ -363,12 +363,20 @@ export default function Workouts() {
   const goalRef = useRef<HTMLInputElement>(null)
 
   async function reload() {
-    const [p, e, w] = await Promise.all([
-      db.workoutPlans.orderBy('createdAt').reverse().toArray(),
-      db.exercises.orderBy('name').toArray(),
-      db.completedWorkouts.orderBy('startedAt').reverse().toArray(),
-    ])
-    setPlans(p); setExercises(e); setAllWorkouts(w); setLoading(false)
+    try {
+      const [p, e, w] = await Promise.all([
+        db.workoutPlans.toArray().then(plans => plans.sort((a, b) => 
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        )),
+        db.exercises.orderBy('name').toArray(),
+        db.completedWorkouts.toArray().then(workouts => workouts.sort((a, b) => 
+          new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
+        )),
+      ])
+      setPlans(p); setExercises(e); setAllWorkouts(w); setLoading(false)
+    } catch (err) {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { reload() }, [])

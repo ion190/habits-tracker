@@ -13,7 +13,9 @@
             rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+--mono: ui-monospace, Consolas, monospace;
+
+  --header-height: 0px;
 
   /* Eisenhower matrix quadrant colors */
   --danger: #ef4444;
@@ -39,6 +41,58 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── iOS PWA & Mobile fixes ───────────────────────────────── */
+
+/* Prevent zoom on input focus - keep inputs at 16px+ */
+input,
+textarea,
+select,
+button {
+  font-size: 16px;
+}
+
+/* Disable double-tap zoom on buttons and links */
+button,
+a,
+input[type='button'],
+input[type='submit'],
+input[type='checkbox'],
+input[type='radio'] {
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+}
+
+/* Support notch and safe areas on iPhone (for PWA) */
+body {
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
+  padding-top: max(12px, env(safe-area-inset-top));
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+
+/* Disable text selection on long-press (except in inputs) */
+body {
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+/* Allow text selection in inputs and textareas */
+input,
+textarea,
+[contenteditable] {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+/* iOS overflow scrolling for better performance */
+.app-main,
+.page,
+[role='main'] {
+  -webkit-overflow-scrolling: touch;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -104,17 +158,47 @@ a { color: inherit; text-decoration: none; }
   flex-direction: column;
   width: 100%;
   min-height: 100svh;
-  padding-top: 50px;
+  padding-top: 0;
+  margin-top: var(--header-height, 0px);
 }
+
 
 .app-main {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: calc(56px + env(safe-area-inset-bottom));
 }
 
+/* Mobile: avoid sidebar/nav overlap artifacts without disabling scrolling entirely */
+@media (max-width: 767px) {
+  html, body, #root {
+    overflow-x: hidden !important;
+  }
+
+  /* keep vertical scrolling controlled by .app-main (it already has overflow-y: auto) */
+  .app-layout,
+  .app-main {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+  }
+
+  /* allow horizontal scrollers that are explicitly designed */
+  .hm-scroll {
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+  }
+
+  .habit-quick-row {
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+  }
+}
+
+
+
 /* ── Sidebar ────────────────────────────────────────────── */
+
 .sidebar {
   display: none;
 }
@@ -439,6 +523,27 @@ a { color: inherit; text-decoration: none; }
   border-radius: 2px;
 }
 
+.hm-legend-button {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.hm-legend-button-active .hm-legend-dot {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.hm-legend-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+
 /* Tooltip */
 .hm-tooltip {
   background: var(--bg);
@@ -713,7 +818,7 @@ a { color: inherit; text-decoration: none; }
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 300;
+  z-index: 3000;
   padding: 16px;
 }
 
@@ -828,6 +933,20 @@ textarea.field { resize: vertical; }
   border-radius: 7px;
 }
 
+/* Smaller ghost buttons used in task listing (Tasks page) */
+.btn-sm {
+  padding: 4px 8px;
+  font-size: 12px;
+  border-radius: 6px;
+  gap: 5px;
+}
+
+.btn-sm.btn-ghost {
+  padding: 2px 6px;
+  font-size: 13px;
+}
+
+
 /* ── Segmented control ─────────────────────────────────── */
 .seg-group {
   display: flex;
@@ -908,13 +1027,14 @@ textarea.field { resize: vertical; }
 .habit-row-card {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 12px 16px;
-  margin-bottom: 8px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
 }
+
 
 .habit-check {
   width: 28px;
@@ -1056,17 +1176,46 @@ textarea.field { resize: vertical; }
 
 /* Sidebar children (habit sub-links) */
 .sidebar-parent {
+  padding: 0 !important;
   justify-content: space-between;
   user-select: none;
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: 10px;
+}
+
+.sidebar-toggle {
+  font-size: 10px;
+  opacity: 0.5;
+  cursor: pointer;
+  padding: 12px 16px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.sidebar-toggle:hover {
+  background: var(--code-bg);
+}
+
+.sidebar-empty {
+  font-size: 13px;
+  opacity: 0.5;
+  padding: 12px 16px;
 }
 
 .sidebar-children {
-  padding-left: 12px;
+  padding-left: 20px;
+  gap: 2px;
 }
 
 .sidebar-child {
-  font-size: 12.5px;
-  padding: 6px 10px;
+  font-size: 13.5px;
+  padding: 12px 16px !important;
 }
 
 .habit-dot-sm {
@@ -1129,12 +1278,10 @@ select.field {
 .sidebar-nav {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   overflow-y: auto;
   flex: 1;
   min-height: 0;
-  margin: 12px -4px 0;
-  padding: 0 4px;
   z-index: 5;
 }
 
@@ -1142,8 +1289,8 @@ select.field {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 10px;
-  border-radius: 8px;
+  padding: 12px 16px !important;
+  border-radius: 10px;
   font-size: 13.5px;
   color: var(--text);
   text-decoration: none;
@@ -1154,14 +1301,26 @@ select.field {
   cursor: pointer;
 }
 
+.sidebar-link svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
 .sidebar-link:hover {
   background: var(--code-bg);
   color: var(--text-h);
 }
 
-.sidebar-link.active {
+.sidebar-link.active,
+.sidebar-parent.active {
   background: var(--accent-bg);
   color: var(--accent);
+}
+
+.sidebar-parent.active .sidebar-link {
+  background: none;
+  color: inherit;
 }
 
 .sidebar-logo {
@@ -1181,10 +1340,76 @@ select.field {
 .hm-3 { background: rgba(34, 197, 94, 0.7); }
 .hm-4 { background: var(--workout-color) }
 
+/* Work-session heatmap: productivity-based color scale */
+.hm-ws-0 { background: var(--border); }
+.hm-ws-1 { background: rgba(239, 68,  68,  0.55); } /* red   — ≤20 % */
+.hm-ws-2 { background: rgba(249, 115, 22,  0.65); } /* orange— 21-50 % */
+.hm-ws-3 { background: rgba(234, 179, 8,   0.70); } /* amber — 51-79 % */
+.hm-ws-4 { background: rgba(34,  197, 94,  0.85); } /* green — 80+ % */
+
 /* Right sidebar */
 .right-sidebar {
   display: none;
 }
+
+/* Utility: show only on mobile / desktop */
+.only-mobile {
+  display: flex;
+  flex-direction: column;
+}
+
+.only-desktop {
+  display: none;
+}
+
+/* Hardening: never show mobile-only blocks on desktop/tablet */
+@media (min-width: 768px) {
+  .only-mobile {
+    display: none !important;
+  }
+  .only-desktop {
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+
+/* Explicitly hide desktop matrix on small screens */
+.tasks-eisenhower-desktop {
+  display: none;
+}
+
+/* Extra hardening: ensure the desktop matrix can't leak into mobile layouts */
+@media (max-width: 767px) {
+  .tasks-eisenhower-desktop {
+    display: none !important;
+  }
+}
+
+
+/* mobile blocks */
+.rs-mobile-block {
+  padding-top: 12px;
+}
+
+/* If RightSidebar is used inside mobile flow, make its aside behave like a vertical list */
+@media (max-width: 767px) {
+  .rs-mobile-block .right-sidebar {
+    display: flex !important;
+    width: 100% !important;
+    border-left: none !important;
+    padding: 0 !important;
+    position: static !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: transparent !important;
+    flex-direction: column;
+    gap: 12px;
+  }
+}
+
+
+
 
 .rs-card {
   background: var(--code-bg);
@@ -1241,7 +1466,7 @@ select.field {
 
 .active-workout {
   max-width: 720px;
-  margin: 0 auto;
+  margin: 3rem auto;
   padding: 24px;
 }
 
@@ -1577,6 +1802,15 @@ select.field {
     min-width: 0;
   }
 
+  .only-mobile {
+    display: none;
+  }
+
+  .only-desktop {
+    display: flex;
+    flex-direction: column;
+  }
+
   .right-sidebar {
     display: flex;
     width: 260px;
@@ -1593,6 +1827,7 @@ select.field {
     z-index: 100;
   }
 }
+
 
 /* ── Extra small screens (phones in portrait) ───────────── */
 @media (max-width: 480px) {
@@ -1653,12 +1888,13 @@ select.field {
   left: 0;
   right: 0;
   height: 50px;
-  /* background: var(--bg); */
+  background: var(--bg);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1;
+  z-index: 100;
   backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border);
 }
 
 .header-timer {
@@ -1717,4 +1953,46 @@ select.field {
   .header-timer { font-size: 2rem; }
   .header-navbar { height: 45px; }
   .app-layout { padding-top: 45px; }
+}
+/* ── Journal heatmap dot ────────────────────────────────── */
+.hm-seg-journal {
+  background: rgba(170, 59, 255, 0.9);
+  border-radius: 2px;
+}
+
+/* ── Calendar page grid ─────────────────────────────────── */
+.cal-grid {
+  background: var(--bg);
+}
+/* ── Sync push button spin animation ────────────────────── */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ── Journal page textarea focus glow ───────────────────── */
+.journal-editor:focus {
+  border-color: var(--accent-border) !important;
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+/* ── Sidebar journal preview truncation ─────────────────── */
+.sidebar-journal-preview {
+  font-size: 11px;
+  opacity: 0.55;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* ── Right sidebar calendar cell hover ──────────────────── */
+.rs-cal-day:hover {
+  background: var(--accent-bg) !important;
+  color: var(--accent) !important;
+}
+
+
+input, textarea, select {
+  font-size: 16px !important;
 }

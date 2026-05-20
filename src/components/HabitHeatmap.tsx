@@ -131,12 +131,6 @@ export default function HabitHeatmap({ habits, logs, filterHabitIds }: Props) {
 
   const filteredCount = filterHabitIds ? logs.filter(l => filterHabitIds.includes(l.habitId)).length : logs.length
   
-  console.log('📊 HabitHeatmap data:', { 
-    totalLogs: logs.length, 
-    filteredLogs: filteredCount,
-    filterHabitIds: filterHabitIds?.length || 0,
-    sampleDaysWithData: Array.from(dayMap.values()).filter(d => d.count > 0).length
-  })
 
   return (
     <div className="unified-heatmap" style={{ marginTop: 16 }} onMouseMove={handleMouseMove}>
