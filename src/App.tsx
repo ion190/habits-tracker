@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './components/AuthContext'
+import { NotificationsProvider } from './components/NotificationsContext'
 import Sidebar from './components/Sidebar'
 import RightSidebar from './components/RightSidebar'
 import Dashboard from './pages/Dashboard'
@@ -110,13 +111,29 @@ function AppShell() {
   // Without this, sync.uid is always null → every write is queued
   // locally forever and never reaches Firestore.
   useEffect(() => {
-    if (user?.uid) {
+    let cancelled = false
+
+    async function init() {
+      if (!user?.uid) {
+        sync.reset()
+        return
+      }
+
       sync.init(user.uid)
-      sync.hydrate().catch(console.error)
-    } else {
-      sync.reset()
+      await sync.hydrate()
+
+      if (cancelled) return
+
+      // Ensure work session categories exist locally so WorkSessions can render.
+      await import('./db/seedWorkSessionCategories').then(m => m.seedWorkSessionCategories())
+    }
+
+    void init()
+    return () => {
+      cancelled = true
     }
   }, [user?.uid])
+
 
   // ── Active timer detection ───────────────────────────────
   const checkActiveTimers = useCallback(() => {
@@ -191,7 +208,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppShell />
+        <NotificationsProvider>
+          <AppShell />
+        </NotificationsProvider>
       </AuthProvider>
     </BrowserRouter>
   )

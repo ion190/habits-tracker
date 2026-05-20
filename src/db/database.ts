@@ -206,16 +206,27 @@ export interface JournalEntry {
 }
 
 // ── Calendar Activities ───────────────────────────────────
+export interface CalendarActivityRecurrence {
+  pattern: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'custom'
+  // For weekly/custom: 0=Sun..6=Sat (matches JS Date.getDay())
+  targetDays?: number[]
+  // Optional end bound
+  endDate?: string
+  // For custom (future expansion): every N of unit
+  interval?: number
+}
+
 export interface CalendarActivity {
   id: string
   title: string
-  date: string       // YYYY-MM-DD
+  date: string       // YYYY-MM-DD (anchor date for recurring activities)
   startTime: string  // HH:MM
   endTime: string    // HH:MM
   color: string
   category?: string
   notes?: string
   createdAt: string
+  recurrence?: CalendarActivityRecurrence
 }
 
 // ── Export / import shape ─────────────────────────────────
@@ -294,8 +305,25 @@ class RitualsDB extends Dexie {
 export const db = new RitualsDB()
 
 // ── Helpers ───────────────────────────────────────────────
+let lastTimestamp = 0
+let counter = 0
+
 export function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+  const now = Date.now()
+  
+  // Generate random part with more entropy (9-12 chars instead of 7-9)
+  const random = Math.random().toString(36).slice(2, 12)
+  
+  if (now === lastTimestamp) {
+    counter++
+  } else {
+    lastTimestamp = now
+    counter = 0
+  }
+  
+  // Always include counter for deterministic uniqueness
+  // This ensures IDs are unique even if timestamp and random collide
+  return `${now}-${random}-${counter}`
 }
 
 // ── Journal date key helpers ──────────────────────────────

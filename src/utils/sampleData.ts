@@ -3,7 +3,7 @@ import { sync } from '../db/sync'
 import { db } from '../db/database'
 
 export async function populateSampleData() {
-  console.log('🧪 Populating sample data...')
+  // Populating sample data...
 
   // Clear all tables — use array syntax for >5 tables
   await db.transaction('rw', [
@@ -116,12 +116,6 @@ export async function populateSampleData() {
       db.workoutPlans.bulkAdd([workoutPlan]),
       db.completedWorkouts.bulkAdd([completedWorkout]),
     ])
-  })
-
-  console.log('✅ Sample data populated!', {
-    habits: habits.length,
-    habitLogs: habitLogs.length,
-    tasks: tasks.length,
   })
 
   if (window.navigator.onLine) {

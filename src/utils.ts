@@ -45,9 +45,20 @@ export function mondayFirstToSundayFirst(mondayFirstIndex: number): number {
   return mondayFirstIndex === 6 ? 0 : mondayFirstIndex + 1
 }
 
+let _lastTimestamp = 0
+let _counter = 0
+
 /** Generate a simple unique id */
 export function makeId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+  const now = Date.now()
+  if (now === _lastTimestamp) {
+    _counter++
+  } else {
+    _lastTimestamp = now
+    _counter = 0
+  }
+  const random = Math.random().toString(36).slice(2, 9)
+  return _counter > 0 ? `${now}-${random}-${_counter}` : `${now}-${random}`
 }
 
 /** Format date in 24h format with GMT+3 timezone */

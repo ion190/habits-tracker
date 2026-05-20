@@ -95,27 +95,33 @@ export default function StartWorkoutModal({ onClose, onStarted }: Props) {
 
   useEffect(() => {
     async function load() {
-      const [p, cw] = await Promise.all([
-        db.workoutPlans.toArray(),
-        db.completedWorkouts.orderBy('startedAt').reverse().toArray(),
-      ])
-      setPlans(p)
+      try {
+        const [p, cw] = await Promise.all([
+          db.workoutPlans.toArray(),
+          db.completedWorkouts.toArray().then(workouts => workouts.sort((a, b) => 
+            new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
+          )),
+        ])
+        setPlans(p)
 
-      // Build last-done map
-      const map = new Map<string, string>()
-      for (const w of cw) {
-        if (!map.has(w.workoutPlanId)) map.set(w.workoutPlanId, w.completedAt)
+        // Build last-done map
+        const map = new Map<string, string>()
+        for (const w of cw) {
+          if (!map.has(w.workoutPlanId)) map.set(w.workoutPlanId, w.completedAt)
+        }
+        setLastDone(map)
+
+        // Second-last = the plan done before the most recent one
+        if (cw.length >= 2) {
+          const firstPlanId  = cw[0].workoutPlanId
+          const secondEntry  = cw.find(w => w.workoutPlanId !== firstPlanId)
+          setSecondLast(secondEntry?.workoutPlanId ?? null)
+        }
+
+        setLoading(false)
+      } catch (err) {
+        setLoading(false)
       }
-      setLastDone(map)
-
-      // Second-last = the plan done before the most recent one
-      if (cw.length >= 2) {
-        const firstPlanId  = cw[0].workoutPlanId
-        const secondEntry  = cw.find(w => w.workoutPlanId !== firstPlanId)
-        setSecondLast(secondEntry?.workoutPlanId ?? null)
-      }
-
-      setLoading(false)
     }
     load()
   }, [])

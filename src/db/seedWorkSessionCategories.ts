@@ -16,6 +16,5 @@ export async function seedWorkSessionCategories() {
       const fullCat: WorkSessionCategory = { id: generateId(), ...cat }
       return sync.put('workSessionCategories', fullCat as unknown as Record<string, unknown>)
     }))
-    console.log('✅ Seeded default work session categories')
   }
 }

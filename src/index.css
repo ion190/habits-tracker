@@ -43,6 +43,58 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* ── iOS PWA & Mobile fixes ───────────────────────────────── */
+
+/* Prevent zoom on input focus - keep inputs at 16px+ */
+input,
+textarea,
+select,
+button {
+  font-size: 16px;
+}
+
+/* Disable double-tap zoom on buttons and links */
+button,
+a,
+input[type='button'],
+input[type='submit'],
+input[type='checkbox'],
+input[type='radio'] {
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+}
+
+/* Support notch and safe areas on iPhone (for PWA) */
+body {
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
+  padding-top: max(12px, env(safe-area-inset-top));
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+
+/* Disable text selection on long-press (except in inputs) */
+body {
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+/* Allow text selection in inputs and textareas */
+input,
+textarea,
+[contenteditable] {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+/* iOS overflow scrolling for better performance */
+.app-main,
+.page,
+[role='main'] {
+  -webkit-overflow-scrolling: touch;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --text: #9ca3af;
@@ -1938,4 +1990,9 @@ select.field {
 .rs-cal-day:hover {
   background: var(--accent-bg) !important;
   color: var(--accent) !important;
+}
+
+
+input, textarea, select {
+  font-size: 16px !important;
 }

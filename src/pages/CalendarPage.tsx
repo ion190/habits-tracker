@@ -1,10 +1,15 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { db, generateId } from '../db/database'
-import type { CalendarActivity, Task, JournalEntry } from '../db/database'
+import type { CalendarActivity, CalendarActivityRecurrence, Task, JournalEntry } from '../db/database'
 import { sync } from '../db/sync'
 
 // ── Helpers ───────────────────────────────────────────────
-function toDateKey(d: Date) { return d.toISOString().slice(0, 10) }
+function toDateKey(d: Date) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
 function timeToMinutes(t: string) {
   const [h, m] = t.split(':').map(Number)
   return h * 60 + m
@@ -16,6 +21,109 @@ function minutesToTime(m: number) {
 }
 function fmtTime(t: string) {
   return t.padStart(5, '0')
+}
+
+// Generate all dates for a recurring activity
+function generateRecurrenceDates(
+  startDate: string,
+  recurrence: CalendarActivityRecurrence,
+  maxDays: number = 365
+): string[] {
+  const start = new Date(startDate + 'T00:00:00')
+  const pattern = recurrence.pattern
+  const endDate = recurrence.endDate ? new Date(recurrence.endDate + 'T00:00:00') : null
+
+  // For weekly/custom patterns, only include startDate if its day of week is in targetDays
+  const startDayOfWeek = start.getDay()
+  const startDateQualifies =
+    pattern === 'weekly' || pattern === 'custom'
+      ? (recurrence.targetDays?.includes(startDayOfWeek) ?? false)
+      : true
+
+  const dates: string[] = startDateQualifies ? [startDate] : []
+
+  let current = new Date(start) // eslint-disable-line prefer-const
+  let dayCount = 0
+
+  while (dayCount < maxDays) {
+    current.setDate(current.getDate() + 1)
+    dayCount++
+
+    if (endDate && current > endDate) break
+
+    const dateKey = toDateKey(current)
+    const dayOfWeek = current.getDay() // 0=Sun, 1=Mon, ..., 6=Sat (matches database schema)
+
+    switch (pattern) {
+      case 'daily':
+        dates.push(dateKey)
+        break
+      case 'weekly':
+        if (recurrence.targetDays?.includes(dayOfWeek)) {
+          dates.push(dateKey)
+        }
+        break
+      case 'monthly':
+        if (current.getDate() === start.getDate()) {
+          dates.push(dateKey)
+        }
+        break
+      case 'quarterly':
+        if (current.getMonth() % 3 === start.getMonth() % 3 && current.getDate() === start.getDate()) {
+          dates.push(dateKey)
+        }
+        break
+      case 'yearly':
+        if (current.getMonth() === start.getMonth() && current.getDate() === start.getDate()) {
+          dates.push(dateKey)
+        }
+        break
+      case 'custom':
+        if (recurrence.targetDays?.includes(dayOfWeek)) {
+          dates.push(dateKey)
+        }
+        break
+    }
+  }
+
+  return dates
+}
+
+// Check if two time ranges overlap
+function timesOverlap(start1: string, end1: string, start2: string, end2: string): boolean {
+  const s1 = timeToMinutes(start1)
+  const e1 = timeToMinutes(end1)
+  const s2 = timeToMinutes(start2)
+  const e2 = timeToMinutes(end2)
+  return s2 < e1 && e2 > s1
+}
+
+// Split an activity to make room for a new activity
+function splitActivity(
+  existing: CalendarActivity,
+  newActivity: CalendarActivity
+): CalendarActivity[] {
+  const result: CalendarActivity[] = []
+
+  // Part before the new activity
+  if (newActivity.startTime > existing.startTime) {
+    result.push({
+      ...existing,
+      id: generateId(),
+      endTime: newActivity.startTime,
+    })
+  }
+
+  // Part after the new activity
+  if (newActivity.endTime < existing.endTime) {
+    result.push({
+      ...existing,
+      id: generateId(),
+      startTime: newActivity.endTime,
+    })
+  }
+
+  return result
 }
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
@@ -84,19 +192,21 @@ function MiniCalendar({ selected, onChange, isMobile }: { selected: string; onCh
                 key={key}
                 onClick={() => onChange(key)}
                 style={{
-                  padding: '8px 0',
+                  padding: '10px 4px',
                   borderRadius: 10,
-                  fontSize: 11,
-                  background: isSel ? 'var(--accent)' : isTod ? 'var(--accent-bg)' : 'transparent',
+                  fontSize: 12,
+                  background: isSel ? 'var(--accent)' : isTod ? 'var(--accent-bg)' : 'var(--code-bg)',
                   color: isSel ? '#fff' : isTod ? 'var(--accent)' : 'var(--text)',
                   fontWeight: isSel || isTod ? 700 : 500,
                   cursor: 'pointer',
                   transition: 'all 0.15s',
+                  border: isSel ? '2px solid var(--accent)' : '2px solid transparent',
+                  boxShadow: isSel ? '0 0 8px rgba(var(--accent-rgb), 0.3)' : 'none',
                 }}
                 title={key}
               >
-                <div style={{ fontSize: 10, opacity: 0.75 }}>{dayLabel}</div>
-                <div>{dayNum}</div>
+                <div style={{ fontSize: 10, opacity: 0.75, marginBottom: 2 }}>{dayLabel}</div>
+                <div style={{ fontWeight: isSel ? 700 : 600 }}>{dayNum}</div>
               </div>
             )
           })}
@@ -146,9 +256,10 @@ function MiniCalendar({ selected, onChange, isMobile }: { selected: string; onCh
 }
 
 // ── Activity form ─────────────────────────────────────────
-function ActivityForm({ date, activity, onSave, onCancel, onDelete }: {
+function ActivityForm({ date, activity, originalRecurringActivity, onSave, onCancel, onDelete }: {
   date: string
   activity?: CalendarActivity
+  originalRecurringActivity?: CalendarActivity
   onSave: (a: CalendarActivity) => void
   onCancel: () => void
   onDelete?: () => void
@@ -159,22 +270,56 @@ function ActivityForm({ date, activity, onSave, onCancel, onDelete }: {
   const [color,     setColor]     = useState(activity?.color ?? COLORS[0])
   const [notes,     setNotes]     = useState(activity?.notes ?? '')
   const [category,  setCategory]  = useState(activity?.category ?? '')
+  
+  // Recurrence fields - for editing recurring activities, use the original activity's recurrence
+  const isEditingRecurring = !!originalRecurringActivity
+  const [recurrenceEnabled, setRecurrenceEnabled] = useState(isEditingRecurring || !!activity?.recurrence)
+  const [recurrencePattern, setRecurrencePattern] = useState<'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'custom'>(
+    originalRecurringActivity?.recurrence?.pattern ?? activity?.recurrence?.pattern ?? 'weekly'
+  )
+  const [recurrenceTargetDays, setRecurrenceTargetDays] = useState<number[]>(
+    originalRecurringActivity?.recurrence?.targetDays ??
+    activity?.recurrence?.targetDays ??
+    [new Date(date + 'T00:00:00').getDay()] // default to the currently selected day of week
+  )
+  const [recurrenceEndDate, setRecurrenceEndDate] = useState(originalRecurringActivity?.recurrence?.endDate ?? activity?.recurrence?.endDate ?? '')
+
+  const toggleDay = (day: number) => {
+    setRecurrenceTargetDays(prev =>
+      prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day].sort()
+    )
+  }
 
   const save = () => {
     if (!title.trim()) return
+    
+    // If editing a recurring activity, update the original recurring activity (not this date's instance)
+    const targetDate = isEditingRecurring && originalRecurringActivity ? originalRecurringActivity.date : date
+    
     const a: CalendarActivity = {
-      id:        activity?.id ?? generateId(),
+      id:        originalRecurringActivity?.id ?? activity?.id ?? generateId(),
       title:     title.trim(),
-      date,
+      date:      targetDate,
       startTime,
       endTime:   endTime > startTime ? endTime : minutesToTime(timeToMinutes(startTime) + 60),
       color,
       notes:     notes.trim() || undefined,
       category:  category.trim() || undefined,
-      createdAt: activity?.createdAt ?? new Date().toISOString(),
+      createdAt: originalRecurringActivity?.createdAt ?? activity?.createdAt ?? new Date().toISOString(),
+      recurrence: recurrenceEnabled ? {
+        pattern: recurrencePattern,
+        targetDays: recurrencePattern === 'weekly' || recurrencePattern === 'custom' ? recurrenceTargetDays : undefined,
+        endDate: recurrenceEndDate || undefined,
+      } : undefined,
     }
     onSave(a)
   }
+
+  // Days of week starting with Sunday (0=Sun)
+  // Display order: Sun, Mon, Tue, Wed, Thu, Fri, Sat
+  // But we'll show Mon first, then Tue-Sun for visual preference
+  const DAYS_OF_WEEK_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const DAYS_DISPLAY_ORDER = [1, 2, 3, 4, 5, 6, 0] // Mon, Tue, Wed, Thu, Fri, Sat, Sun
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -215,10 +360,68 @@ function ActivityForm({ date, activity, onSave, onCancel, onDelete }: {
       <textarea className="field" placeholder="Notes (optional)" value={notes}
         onChange={e => setNotes(e.target.value)} rows={2} style={{ resize: 'none' }} />
 
+      {/* Recurrence Section */}
+      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer', fontWeight: 500 }}>
+          <input type="checkbox" checked={recurrenceEnabled}
+            onChange={e => setRecurrenceEnabled(e.target.checked)} />
+          Recurring activity
+        </label>
+        
+        {isEditingRecurring && (
+          <p style={{ fontSize: 11, opacity: 0.6, marginTop: 6, marginBottom: 0 }}>
+            📌 Editing recurring activity (changes apply to all instances)
+          </p>
+        )}
+
+        {recurrenceEnabled && (
+          <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <label className="form-label" style={{ fontSize: 12, marginBottom: 4 }}>Repeat pattern
+              <select className="field" value={recurrencePattern}
+                onChange={e => setRecurrencePattern(e.target.value as 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'custom')}
+                style={{ fontSize: 13 }}>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="quarterly">Quarterly</option>
+                <option value="yearly">Yearly</option>
+                <option value="custom">Custom</option>
+              </select>
+            </label>
+
+            {(recurrencePattern === 'weekly' || recurrencePattern === 'custom') && (
+              <div>
+                <p style={{ fontSize: 12, opacity: 0.6, marginBottom: 6 }}>Days of week</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}>
+                  {DAYS_DISPLAY_ORDER.map((dayValue) => (
+                    <button key={dayValue} onClick={() => toggleDay(dayValue)} style={{
+                      padding: '6px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                      background: recurrenceTargetDays.includes(dayValue) ? 'var(--accent)' : 'var(--code-bg)',
+                      color: recurrenceTargetDays.includes(dayValue) ? '#fff' : 'var(--text)',
+                      border: '1px solid var(--border)', cursor: 'pointer',
+                      transition: 'all 0.15s',
+                    }}>
+                      {DAYS_OF_WEEK_LABELS[dayValue]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <label className="form-label" style={{ fontSize: 12 }}>End date (optional)
+              <input type="date" className="field" value={recurrenceEndDate}
+                onChange={e => setRecurrenceEndDate(e.target.value)} />
+            </label>
+          </div>
+        )}
+      </div>
+
       <div className="form-actions">
-        {onDelete && (
+        {(onDelete || isEditingRecurring) && (
           <button className="btn btn-ghost" style={{ color: 'var(--danger)', marginRight: 'auto' }}
-            onClick={onDelete}>🗑 Delete</button>
+            onClick={onDelete}>
+            {isEditingRecurring ? '🛑 Stop recurring' : '🗑 Delete'}
+          </button>
         )}
         <button className="btn btn-ghost" onClick={onCancel}>Cancel</button>
         <button className="btn btn-primary" onClick={save} disabled={!title.trim()}>
@@ -311,6 +514,7 @@ export default function CalendarPage() {
   const [journals,     setJournals]             = useState<Map<string, JournalEntry>>(new Map())
   const [showForm,     setShowForm]             = useState(false)
   const [editActivity, setEditActivity]         = useState<CalendarActivity | undefined>()
+  const [originalRecurringActivity, setOriginalRecurringActivity] = useState<CalendarActivity | undefined>() // Track original recurring activity
   const [newStartTime, setNewStartTime]         = useState('09:00')
   const [newEndTime, setNewEndTime] = useState('10:00')
   const [showDayTip,   setShowDayTip]           = useState(false)
@@ -321,6 +525,7 @@ export default function CalendarPage() {
   const [tempStartMin, setTempStartMin] = useState<number | null>(null)
   const [tempEndMin, setTempEndMin] = useState<number | null>(null)
   const [isMobile, setIsMobile] = useState(false)
+  const [splitNotification, setSplitNotification] = useState<{ title: string; details: string[] } | null>(null)
 
   // Track selection without relying on async state updates for touch-action.
   const isSelectingRef = useRef(false)
@@ -330,12 +535,31 @@ export default function CalendarPage() {
   const resizeRef   = useRef<{ id: string; field: 'start' | 'end' } | null>(null)
 
   const load = useCallback(async () => {
-    const [acts, ts, js] = await Promise.all([
-      db.calendarActivities.where('date').equals(selectedDate).toArray(),
+    // Load activities directly for this date
+    const directActivities = await db.calendarActivities.where('date').equals(selectedDate).toArray()
+    
+    // Also load all recurring activities and check which ones apply to this date
+    const allActivities = await db.calendarActivities.toArray()
+    const recurringActivities = allActivities.filter(a => a.recurrence && a.date !== selectedDate)
+    
+    const applicableRecurring: CalendarActivity[] = []
+    for (const activity of recurringActivities) {
+      if (!activity.recurrence) continue
+      const dates = generateRecurrenceDates(activity.date, activity.recurrence)
+      if (dates.includes(selectedDate)) {
+        // Keep the original activity as-is - don't modify the date!
+        // The date field should always be the anchor date for recurring activities
+        applicableRecurring.push(activity)
+      }
+    }
+    
+    const acts = [...directActivities, ...applicableRecurring].sort((a, b) => a.startTime.localeCompare(b.startTime))
+    
+    const [ts, js] = await Promise.all([
       db.tasks.toArray(),
       db.journalEntries.where('period').equals('daily').toArray(),
     ])
-    setActivities(acts.sort((a, b) => a.startTime.localeCompare(b.startTime)))
+    setActivities(acts)
     setTasks(ts)
     const map = new Map<string, JournalEntry>()
     js.forEach(j => map.set(j.dateKey, j))
@@ -362,20 +586,111 @@ export default function CalendarPage() {
     return () => clearTimeout(timeout)
   }, [])
 
-    const saveActivity = async (a: CalendarActivity) => {
-    const record = { ...a, id: a.id || generateId() }
-    await sync.put('calendarActivities', record as unknown as Record<string, unknown>)
-    setActivities(prev => {
-      const idx = prev.findIndex(x => x.id === record.id)
-      return idx >= 0 ? prev.map(x => x.id === record.id ? record : x) : [...prev, record]
-    })
-    setShowForm(false); setEditActivity(undefined)
+  const saveActivity = async (a: CalendarActivity) => {
+    const splitDetails: string[] = []
+
+    // If this is a recurring activity being saved, we need to use the original date
+    // and save it as a recurring activity (not create instances)
+    if (a.recurrence) {
+      // Recurring activity: just save it (check only on the main date if needed)
+      // Remove the old version if updating
+      const oldRecurring = await db.calendarActivities.get(a.id)
+      if (oldRecurring?.recurrence) {
+        await sync.delete('calendarActivities', a.id)
+      }
+
+      // Save the recurring activity with its original date
+      const record = {
+        ...a,
+        id: a.id || generateId(),
+      }
+      await sync.put('calendarActivities', record as unknown as Record<string, unknown>)
+    } else {
+      // This is a direct activity on a specific date
+      const dateKey = a.date
+      
+      // Check for overlaps with direct activities on this date
+      const directActivitiesOnDate = await db.calendarActivities
+        .where('date').equals(dateKey)
+        .filter(act => !act.recurrence)
+        .toArray()
+
+      // Check for overlaps with recurring activity instances
+      const allActivities = await db.calendarActivities.toArray()
+      const recurringActivities = allActivities.filter(act => act.recurrence)
+      
+      const recurringInstancesOnDate: CalendarActivity[] = []
+      for (const recActivity of recurringActivities) {
+        if (!recActivity.recurrence) continue
+        const dates = generateRecurrenceDates(recActivity.date, recActivity.recurrence)
+        if (dates.includes(dateKey)) {
+          recurringInstancesOnDate.push({
+            ...recActivity,
+            date: dateKey,
+          })
+        }
+      }
+
+      const allActivitiesOnDate = [...directActivitiesOnDate, ...recurringInstancesOnDate]
+
+      // Find overlaps
+      const overlapping = allActivitiesOnDate.filter(
+        existing => existing.id !== a.id && timesOverlap(existing.startTime, existing.endTime, a.startTime, a.endTime)
+      )
+
+      // Split overlapping activities (only direct ones)
+      for (const overlappingAct of overlapping) {
+        const splitParts = splitActivity(overlappingAct, a)
+        
+        // Only delete direct activities, not recurring activity instances
+        if (!overlappingAct.recurrence) {
+          await sync.delete('calendarActivities', overlappingAct.id)
+          
+          for (const part of splitParts) {
+            await sync.put('calendarActivities', part as unknown as Record<string, unknown>)
+          }
+        }
+        
+        splitDetails.push(`"${overlappingAct.title}" (${fmtTime(overlappingAct.startTime)}-${fmtTime(overlappingAct.endTime)})`)
+      }
+      
+      // Save the new/updated activity
+      const record = {
+        ...a,
+        id: a.id || generateId(),
+      }
+      await sync.put('calendarActivities', record as unknown as Record<string, unknown>)
+    }
+
+    // Show notification if there were splits
+    if (splitDetails.length > 0) {
+      setSplitNotification({
+        title: `${splitDetails.length} activit${splitDetails.length !== 1 ? 'ies were' : 'y was'} split to make room`,
+        details: splitDetails.map(d => d),
+      })
+      setTimeout(() => setSplitNotification(null), 5000)
+    }
+
+    // Reload activities
+    await load()
+    setShowForm(false)
+    setEditActivity(undefined)
+    setOriginalRecurringActivity(undefined)
   }
 
-    const deleteActivity = async (id: string) => {
-    await sync.delete('calendarActivities', id)
+  const deleteActivity = async (id: string, isRecurring: boolean = false) => {
+    if (isRecurring) {
+      // Deleting a recurring activity - delete the entire series
+      await sync.delete('calendarActivities', id)
+      // No need to filter activities since load will be called
+    } else {
+      // Deleting a direct activity
+      await sync.delete('calendarActivities', id)
+    }
     setActivities(prev => prev.filter(a => a.id !== id))
-    setShowForm(false); setEditActivity(undefined)
+    setShowForm(false)
+    setEditActivity(undefined)
+    setOriginalRecurringActivity(undefined)
   }
 
   const addQuickTask = async () => {
@@ -396,6 +711,7 @@ export default function CalendarPage() {
   const isPointerDownRef = useRef(false)
   const selectionStartedRef = useRef(false)
   const selectionStartedFnRef = selectionStartedRef
+  const longPressActivatedRef = useRef(false)
 
 
   const clearAutoScroll = () => {
@@ -427,9 +743,9 @@ export default function CalendarPage() {
 
   const clientYToMin = (clientY: number, container: HTMLDivElement) => {
     const rect = container.getBoundingClientRect()
-    const y = clientY - rect.top + scrollRef.current!.scrollTop
-    // Since we use absolute positions within the cal-grid, include scroll offset by adjusting y.
-    // Snap 15 minutes
+    const y = clientY - rect.top
+    // getBoundingClientRect() already accounts for scroll position in the DOM tree.
+    // No need to add scrollTop - snap to 15 minutes
     return Math.round(((y / SLOT_H) * 4)) * 15
   }
 
@@ -490,6 +806,9 @@ export default function CalendarPage() {
   }
 
   const handleGridPointerDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    // Mobile browsers fire synthetic mouse events after touch events — ignore them;
+    // selection on mobile is handled entirely by the touch handlers below.
+    if (isMobile) return
     if (e.button !== 0) return
     if (dragRef.current || resizeRef.current) return
     const container = e.currentTarget
@@ -498,6 +817,7 @@ export default function CalendarPage() {
   }
 
   const handleGridPointerMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (isMobile) return
     if (!isPointerDownRef.current) return
     if (!scrollRef.current) return
     const container = e.currentTarget
@@ -506,6 +826,7 @@ export default function CalendarPage() {
   }
 
   const handleGridPointerUp = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (isMobile) return
     if (!isPointerDownRef.current) return
     const container = e.currentTarget
     endSelection(e.clientY, container)
@@ -516,45 +837,68 @@ export default function CalendarPage() {
     const touch = e.touches[0]
     const container = e.currentTarget
 
-    // Long-press to start rectangle selection
     selectionStartedRef.current = false
+    longPressActivatedRef.current = false
     if (touchLongPressTimer.current) window.clearTimeout(touchLongPressTimer.current)
-    touchLongPressTimer.current = window.setTimeout(() => {
-      // Start rectangle selection. Keep normal scroll behavior available
-      // until selection is actually active.
+    
+    // On mobile ONLY: require long-press (350ms)
+    if (isMobile) {
+      touchLongPressTimer.current = window.setTimeout(() => {
+        // Start rectangle selection after long-press on mobile
+        longPressActivatedRef.current = true
+        beginSelection(touch.clientY, container)
+        setTempEndMin(null)
+      }, 350)
+    } else {
+      // Non-mobile devices (desktop with touch, tablets): start immediately
+      longPressActivatedRef.current = true
       beginSelection(touch.clientY, container)
       setTempEndMin(null)
-    }, 350)
+    }
   }
 
   const handleGridTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
     if (e.touches.length !== 1) return
     const touch = e.touches[0]
+
+    // If the long-press hasn't fired yet, any movement means the user is scrolling —
+    // cancel the timer so the selection never starts.
+    if (!longPressActivatedRef.current) {
+      if (touchLongPressTimer.current) {
+        window.clearTimeout(touchLongPressTimer.current)
+        touchLongPressTimer.current = null
+      }
+      return // let the browser handle the scroll naturally
+    }
+
+    // Long-press IS active — update the selection rectangle.
     if (!isPointerDownRef.current) return
     if (!scrollRef.current) return
 
     maybeStartAutoScroll(touch.clientY, scrollRef.current)
     updateSelection(touch.clientY, e.currentTarget)
 
-    // Only block scrolling once selection has actually started.
-    if (selectionStartedFnRef.current) e.preventDefault()
+    // Block scroll while actively drawing a selection.
+    e.preventDefault()
   }
 
   const handleGridTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
     if (touchLongPressTimer.current) window.clearTimeout(touchLongPressTimer.current)
     touchLongPressTimer.current = null
 
-    // If we never long-pressed into selection, ignore
-    if (!isPointerDownRef.current || !selectionStartedRef.current) return
+    // Only finalise if the long-press actually fired and a selection was drawn.
+    if (!longPressActivatedRef.current || !isPointerDownRef.current || !selectionStartedRef.current) {
+      longPressActivatedRef.current = false
+      return
+    }
 
-    // End selection using last known touch Y if possible
+    longPressActivatedRef.current = false
+
+    // End selection using last known touch Y.
     const container = e.currentTarget
     const lastY = e.changedTouches[0]?.clientY ?? 0
     endSelection(lastY, container)
   }
-
-
-  // ── Single click fallback (right-click or modifier?) - keep old logic as fallback if needed
 
   // ── Drag to move ─────────────────────────────────────────
   const startDrag = (e: React.MouseEvent, a: CalendarActivity) => {
@@ -647,8 +991,39 @@ export default function CalendarPage() {
       gap: 20, 
       height: 'calc(100vh - 60px)', 
       overflow: 'hidden', 
-      padding: '16px 20px' 
+      padding: '16px 20px',
+      position: 'relative',
     }}>
+
+      {/* Split notification */}
+      {splitNotification && (
+        <div style={{
+          position: 'absolute',
+          top: 16,
+          left: 20,
+          right: 20,
+          zIndex: 2000,
+          background: 'var(--bg)',
+          border: '1px solid var(--border)',
+          borderRadius: 12,
+          padding: 16,
+          boxShadow: 'var(--shadow-xl)',
+          maxWidth: 400,
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+            <strong style={{ fontSize: 13 }}>✂️ {splitNotification.title}</strong>
+            <button className="btn btn-ghost" style={{ padding: '0 4px', fontSize: 16 }}
+              onClick={() => setSplitNotification(null)}>×</button>
+          </div>
+          <div style={{ fontSize: 12, opacity: 0.7, lineHeight: 1.6 }}>
+            {splitNotification.details.map((detail, i) => (
+              <div key={i} style={{ marginBottom: i < splitNotification.details.length - 1 ? 4 : 0 }}>
+                • {detail}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Left panel */}
       <div style={{ width: isMobile ? '100%' : 230, flexShrink: 0, maxHeight: isMobile ? '35vh' : undefined, display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto' }}>
@@ -778,40 +1153,22 @@ export default function CalendarPage() {
             onMouseMove={handleGridPointerMove}
             onMouseUp={handleGridPointerUp}
 
-            onPointerDown={(e) => {
-              // Enable “draw with cursor” rectangle creation on mobile + desktop.
-              // We keep mouse logic intact for desktop by only handling touch/pen pointers here.
-              if (e.pointerType === 'mouse') return
-              if (e.button !== 0) return
-              const target = e.currentTarget
-              if (dragRef.current || resizeRef.current) return
-
-              // Start selection immediately (no long-press needed), but only for single pointer.
-              // Prevents accidental taps/gestures while selecting.
-              beginSelection(e.clientY, target)
-              e.preventDefault()
+            onPointerDown={() => {
+              // Pointer events handled by mouse/touch handlers below
             }}
-            onPointerMove={(e) => {
-              if (e.pointerType === 'mouse') return
-              if (!isPointerDownRef.current) return
-              const target = e.currentTarget
-              if (!scrollRef.current) return
-              maybeStartAutoScroll(e.clientY, scrollRef.current)
-              updateSelection(e.clientY, target)
-              if (selectionStartedRef.current) e.preventDefault()
+            onPointerMove={() => {
+              // Pointer events handled by mouse/touch handlers below
             }}
 
-            onPointerUp={(e) => {
-              if (e.pointerType === 'mouse') return
-              if (!isPointerDownRef.current) return
-              const container = e.currentTarget
-              endSelection(e.clientY, container)
+            onPointerUp={() => {
+              // Pointer events handled by mouse/touch handlers below
             }}
             onPointerCancel={(e) => {
               if (e.pointerType === 'mouse') return
               if (!isPointerDownRef.current) return
               clearAutoScroll()
               isPointerDownRef.current = false
+              longPressActivatedRef.current = false
               selectionStartedRef.current = false
               setIsSelecting(false)
               setSelection(null)
@@ -845,8 +1202,8 @@ export default function CalendarPage() {
               position: 'relative',
               height: SLOT_H * 24,
               cursor: isSelecting ? 'grabbing' : 'crosshair',
-              // Ensure touch scrolling keeps working when not selecting.
-              touchAction: 'pan-y',
+              // Allow pan-y (scroll) by default; block it only when actively selecting
+              touchAction: isSelecting ? 'none' : 'pan-y',
             }}
           >
             {/* Hour lines */}
@@ -935,7 +1292,17 @@ export default function CalendarPage() {
                 <div
                   key={a.id}
                   onMouseDown={e => startDrag(e, a)}
-                  onClick={e => { e.stopPropagation(); setEditActivity(a); setShowForm(true) }}
+                  onClick={e => { 
+                    e.stopPropagation()
+                    setEditActivity(a)
+                    // If this activity has recurrence, set it as the original recurring activity for editing
+                    if (a.recurrence) {
+                      setOriginalRecurringActivity(a)
+                    } else {
+                      setOriginalRecurringActivity(undefined)
+                    }
+                    setShowForm(true) 
+                  }}
                   style={{
                     position: 'absolute', left: 52, right: 8, top, height,
                     background: gradient,
@@ -946,7 +1313,7 @@ export default function CalendarPage() {
                     zIndex: 10 + idx, userSelect: 'none',
                     transition: 'all 0.2s ease'
                   }}
-                  title={`${a.title}\n${fmtTime(a.startTime)} - ${fmtTime(a.endTime)} (${Math.round(dur/60)}h)`}
+                  title={`${a.title}\n${fmtTime(a.startTime)} - ${fmtTime(a.endTime)} (${Math.round(dur/60)}h)${a.recurrence ? ' [Recurring]' : ''}`}
                 >
                   <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#fff', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {a.title}
@@ -1007,9 +1374,10 @@ export default function CalendarPage() {
               : { id: '', title: '', date: selectedDate, startTime: newStartTime, endTime: newEndTime,
                   color: COLORS[0], createdAt: '' }
             }
+            originalRecurringActivity={editActivity?.recurrence ? editActivity : undefined}
             onSave={saveActivity}
-            onCancel={() => { setShowForm(false); setEditActivity(undefined) }}
-            onDelete={editActivity ? () => deleteActivity(editActivity.id) : undefined}
+            onCancel={() => { setShowForm(false); setEditActivity(undefined); setOriginalRecurringActivity(undefined) }}
+            onDelete={editActivity ? () => deleteActivity(editActivity.id, !!editActivity.recurrence) : undefined}
           />
           <p style={{ fontSize: 12, opacity: 0.6, marginTop: 8 }}>
             Duration: {Math.round((timeToMinutes(newEndTime || '10:00') - timeToMinutes(newStartTime)) / 60)}h
@@ -1019,4 +1387,3 @@ export default function CalendarPage() {
     </div>
   )
 }
-

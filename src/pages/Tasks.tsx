@@ -12,8 +12,10 @@ import Modal from '../components/Modal'
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
 import TaskHeatmap from '../components/TaskHeatmap'
 import TasksMobileQuadrant from './TasksMobileQuadrant'
+import DatePickerInput from '../components/DatePickerInput'
 
 export default function Tasks() {
+
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedTaskId = searchParams.get('taskId') || null
 
@@ -23,6 +25,16 @@ export default function Tasks() {
 
   const [showArchived, setShowArchived] = useState(false)
   const [showModal, setShowModal] = useState(false)
+
+  // Focus title input when the modal opens (new/edit)
+  useEffect(() => {
+    if (!showModal) return
+    requestAnimationFrame(() => {
+      const el = document.getElementById('task-modal-title') as HTMLInputElement | null
+      el?.focus()
+      el?.select()
+    })
+  }, [showModal])
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Task | null>(null)
@@ -59,8 +71,8 @@ export default function Tasks() {
   const load = async () => {
     const all = await db.tasks.toArray()
 
-
     const active = all
+
       .filter(t => !t.archivedAt && !t.completedAt)
       .sort((a, b) => {
         const impOrder = { high: 3, medium: 2, low: 1 }
@@ -72,21 +84,11 @@ export default function Tasks() {
     const completed = all
       .filter(t => !!t.completedAt)
       .sort((a, b) => new Date(b.completedAt!).getTime() - new Date(a.completedAt!).getTime())
-    const archived = all
+  const archived = all
       .filter(t => t.archivedAt && !t.completedAt)
       .sort((a, b) => new Date(b.archivedAt!).getTime() - new Date(a.archivedAt!).getTime())
 
-    console.log('📋 Tasks load:', { 
-      totalTasks: all.length, 
-      active: active.length, 
-      completed: completed.length, 
-      archived: archived.length,
-      completedThisWeek: completed.filter(t => {
-        const weekAgo = new Date()
-        weekAgo.setDate(weekAgo.getDate() - 7)
-        return new Date(t.completedAt!) >= weekAgo
-      }).length
-    })
+
     setTasks(active)
     setCompletedTasks(completed)
     setArchivedTasks(archived)
@@ -1049,6 +1051,7 @@ export default function Tasks() {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Task title"
+                id="task-modal-title"
                 autoFocus
               />
             </div>
@@ -1066,11 +1069,10 @@ export default function Tasks() {
 
             <div className="form-label">
               Due Date (anchor)
-              <input
-                type="date"
-                className="field"
+              <DatePickerInput
                 value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
+                onChange={setDueDate}
+                placeholder="Pick a date"
               />
             </div>
 
@@ -1115,8 +1117,12 @@ export default function Tasks() {
                   <div className="form-label">
                     Target days (weekly)
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
-                      {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d, idx) => {
-                        const isOn = repeatTargetDays.includes(idx)
+                      {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d, idx) => {
+                        const jsDayIndex = (idx + 1) % 7
+                        const isOn = repeatTargetDays.includes(jsDayIndex)
+
+
+
                         return (
                           <button
                             key={d}
@@ -1131,8 +1137,13 @@ export default function Tasks() {
                               cursor: 'pointer'
                             }}
                             onClick={() => {
+                              // idx is the button position in a Mon-first row (Mon=0..Sun=6).
+                              // Convert to JS getDay() index (Sun=0..Sat=6) so stored recurrence is consistent.
+                              const jsDayIndex = (idx + 1) % 7
                               setRepeatTargetDays(prev =>
-                                prev.includes(idx) ? prev.filter(x => x !== idx) : [...prev, idx]
+                                prev.includes(jsDayIndex)
+                                  ? prev.filter(x => x !== jsDayIndex)
+                                  : [...prev, jsDayIndex].sort((a, b) => a - b)
                               )
                             }}
                           >

@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { db, generateId, dateKeyForPeriod } from '../db/database'
 import type { CalendarActivity, CompletedWorkSession, WorkSessionCategory, JournalEntry, Habit, HabitLog, CompletedWorkout, Task } from '../db/database'
-import { formatDuration, toDateKey, startOfWeek, isTaskDueOnDate } from '../utils'
+import { formatDuration, toDateKey, startOfWeek, isTaskDueOnDate, getPastTags } from '../utils'
 
 import { sync } from '../db/sync'
 import UnifiedHeatmap from '../components/UnifiedHeatmap'
@@ -10,6 +10,9 @@ import HabitValueModal from '../components/HabitValueModal'
 import StartWorkoutModal from '../components/StartWorkoutModal'
 import StartWorkSessionModal from '../components/StartWorkSessionModal'
 import ModalPortal from '../components/ModalPortal'
+import Modal from '../components/Modal'
+import DatePickerInput from '../components/DatePickerInput'
+import TagSuggestions from '../components/TagSuggestions'
 
 function CompletionCircle({ pct }: { pct: number }) {
   const r = 16; const circ = 2 * Math.PI * r
@@ -93,73 +96,113 @@ export default function Dashboard() {
   const [tomorrowKey, setTomorrowKey] = useState('')
   const [now, setNow] = useState(new Date())
 
+  // Task modal state
+  const [showTaskModal, setShowTaskModal] = useState(false)
+  const [editingTask, setEditingTask] = useState<Task | null>(null)
+  const [taskTitle, setTaskTitle] = useState('')
+  const [taskDescription, setTaskDescription] = useState('')
+  const [taskDueDate, setTaskDueDate] = useState('')
+  const [taskUrgency, setTaskUrgency] = useState<'low' | 'medium' | 'high'>('medium')
+  const [taskImportance, setTaskImportance] = useState<'low' | 'medium' | 'high'>('medium')
+  const [taskTags, setTaskTags] = useState<string[]>([])
+  const [taskTagInput, setTaskTagInput] = useState('')
+  const [pastTaskTags, setPastTaskTags] = useState<string[]>([])
+  const [repeatEnabled, setRepeatEnabled] = useState(false)
+  const [repeatPattern, setRepeatPattern] = useState<'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'decadely' | 'custom'>('weekly')
+  const [repeatTargetDays, setRepeatTargetDays] = useState<number[]>([1,3,5])
+  const [repeatEndDate, setRepeatEndDate] = useState('')
+
   const weeklyTarget = parseInt(localStorage.getItem('weeklyWorkoutTarget') ?? '3')
+
+  const loadTaskTags = useCallback(async () => {
+    const tags = await getPastTags('task')
+    setPastTaskTags(tags)
+  }, [])
 
   const load = useCallback(async () => {
     const weekStart = startOfWeek()
     const previousWeekStart = new Date(weekStart)
     previousWeekStart.setDate(previousWeekStart.getDate() - 7)
 
-    const [h, l, w, t, ws, wsc, acts] = await Promise.all([
-      db.habits.filter((h) => !h.archivedAt).toArray(),
-      db.habitLogs.toArray(),
-      db.completedWorkouts.orderBy('startedAt').reverse().toArray(),
-      db.tasks.filter((t) => !t.archivedAt).toArray(),
-      db.completedWorkSessions.where('startedAt').aboveOrEqual(startOfWeek().toISOString()).toArray(),
-      db.workSessionCategories.toArray(),
-      db.calendarActivities.toArray(),
-    ])
-    setActivities(acts)
-    setHabits(h)
-    setLogs(l)
-    setAllWorkouts(w)
-    setTasks(t)
-    setWorkSessions(ws)
-    setWorkSessionCategories(wsc)
+    try {
+      const [h, l, w, t, ws, wsc, acts] = await Promise.all([
+        db.habits.filter((h) => !h.archivedAt).toArray(),
+        db.habitLogs.toArray(),
+        db.completedWorkouts.toArray().then(workouts => workouts.sort((a, b) => 
+          new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
+        )),
+        db.tasks.filter((t) => !t.archivedAt).toArray(),
+        db.completedWorkSessions.where('startedAt').aboveOrEqual(startOfWeek().toISOString()).toArray(),
+        db.workSessionCategories.toArray(),
+        db.calendarActivities.toArray(),
+      ])
+      setActivities(acts)
+      setHabits(h)
+      setLogs(l)
+      setAllWorkouts(w)
+      setTasks(t)
+      setWorkSessions(ws)
+      setWorkSessionCategories(wsc)
 
-    const todayKeyLocal = dateKeyForPeriod('daily')
-    const tomorrowDate = new Date()
-    tomorrowDate.setDate(tomorrowDate.getDate() + 1)
-    const tomorrowKeyLocal = toDateKey(tomorrowDate.toISOString())
-    setTomorrowKey(tomorrowKeyLocal)
+      const todayKeyLocal = dateKeyForPeriod('daily')
+      const tomorrowDate = new Date()
+      tomorrowDate.setDate(tomorrowDate.getDate() + 1)
+      const tomorrowKeyLocal = toDateKey(tomorrowDate.toISOString())
+      setTomorrowKey(tomorrowKeyLocal)
 
-    const todaysAll = acts.filter(a => a.date === todayKeyLocal)
-    
-    // Split today's into past/completed vs future
-    const futureTodays = todaysAll.filter(a => {
-      const startDateTime = new Date(todayKeyLocal + 'T' + a.startTime + ':00')
-      return startDateTime > now
-    })
-    const pastTodays = todaysAll.filter(a => {
-      const endDateTime = new Date(todayKeyLocal + 'T' + a.endTime + ':00')
-      return endDateTime < now
-    })
-    
-    const tomorrowActs = acts.filter(a => a.date === tomorrowKeyLocal)
-    setTodaysActivities([...futureTodays, ...pastTodays]) // Future first
-    setTodaysFutureActivities(futureTodays)
-    setTomorrowActivities(tomorrowActs)
-    const jEntry = await db.journalEntries.filter(e => e.period === 'daily' && e.dateKey === todayKeyLocal).first()
-    setTodayJournal(jEntry ?? null)
-
-    const thisWeekWorkouts = w.filter((x) => new Date(x.startedAt) >= weekStart)
-
-    if (thisWeekWorkouts.length === 0) {
-      const lastWeekWorkouts = w.filter((x) => {
-        const date = new Date(x.startedAt)
-        return date >= previousWeekStart && date < weekStart
+      const todaysAll = acts.filter((a: CalendarActivity) => a.date === todayKeyLocal)
+      
+      // Split today's into past/completed vs future
+      const futureTodays = todaysAll.filter((a: CalendarActivity) => {
+        const startDateTime = new Date(todayKeyLocal + 'T' + a.startTime + ':00')
+        return startDateTime > now
       })
-      setWorkouts(lastWeekWorkouts)
-      setWorkoutsFromPreviousWeek(true)
-    } else {
-      setWorkouts(thisWeekWorkouts)
-      setWorkoutsFromPreviousWeek(false)
+      const pastTodays = todaysAll.filter((a: CalendarActivity) => {
+        const endDateTime = new Date(todayKeyLocal + 'T' + a.endTime + ':00')
+        return endDateTime < now
+      })
+      
+      const tomorrowActs = acts.filter((a: CalendarActivity) => a.date === tomorrowKeyLocal)
+      setTodaysActivities([...futureTodays, ...pastTodays]) // Future first
+      setTodaysFutureActivities(futureTodays)
+      setTomorrowActivities(tomorrowActs)
+      const jEntry = await db.journalEntries.filter(e => e.period === 'daily' && e.dateKey === todayKeyLocal).first()
+      setTodayJournal(jEntry ?? null)
+
+      const thisWeekWorkouts = w.filter((x: CompletedWorkout) => new Date(x.startedAt) >= weekStart)
+
+      if (thisWeekWorkouts.length === 0) {
+        const lastWeekWorkouts = w.filter((x: CompletedWorkout) => {
+          const date = new Date(x.startedAt)
+          return date >= previousWeekStart && date < weekStart
+        })
+        setWorkouts(lastWeekWorkouts)
+        setWorkoutsFromPreviousWeek(true)
+      } else {
+        setWorkouts(thisWeekWorkouts)
+        setWorkoutsFromPreviousWeek(false)
+      }
+
+      setLoading(false)
+    } catch (err) {
+      setLoading(false)
     }
+  }, [now])
 
-    setLoading(false)
-  }, [])
+  useEffect(() => {
+    load()
+    loadTaskTags()
+  }, [load, loadTaskTags])
 
-  useEffect(() => { load() }, [load])
+  // Focus task title input when modal opens
+  useEffect(() => {
+    if (!showTaskModal) return
+    requestAnimationFrame(() => {
+      const el = document.getElementById('task-modal-title') as HTMLInputElement | null
+      el?.focus()
+      el?.select()
+    })
+  }, [showTaskModal])
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -225,6 +268,50 @@ export default function Dashboard() {
     setValueModalHabit(null)
   }
 
+  function openNewTask() {
+    setEditingTask(null)
+    setTaskTitle('')
+    setTaskDescription('')
+    setTaskDueDate('')
+    setTaskUrgency('medium')
+    setTaskImportance('medium')
+    setTaskTags([])
+    setTaskTagInput('')
+    setRepeatEnabled(false)
+    setRepeatPattern('weekly')
+    setRepeatTargetDays([1,3,5])
+    setRepeatEndDate('')
+    setShowTaskModal(true)
+  }
+
+  async function saveTask() {
+    if (!taskTitle.trim()) return
+    if (!taskDueDate && repeatEnabled) return
+
+    const task: Task = {
+      id: editingTask?.id ?? generateId(),
+      title: taskTitle,
+      description: taskDescription || undefined,
+      dueDate: taskDueDate || undefined,
+      recurrence: repeatEnabled && taskDueDate ? {
+        pattern: repeatPattern,
+        targetDays: repeatPattern === 'weekly' || repeatPattern === 'custom' ? repeatTargetDays : undefined,
+        endDate: repeatEndDate || undefined,
+      } : undefined,
+      notificationTime: undefined,
+      completedAt: editingTask?.completedAt ?? undefined,
+      createdAt: editingTask?.createdAt ?? new Date().toISOString(),
+      tags: taskTags,
+      urgency: taskUrgency,
+      importance: taskImportance,
+      archivedAt: editingTask?.archivedAt ?? undefined,
+    }
+
+    await sync.put('tasks', task as unknown as Record<string, unknown>)
+    setShowTaskModal(false)
+    load()
+  }
+
   return (
     <div className="page">
       <div className="page-header">
@@ -256,10 +343,26 @@ export default function Dashboard() {
             {todayJournal ? 'written today' : 'not written'}
           </p>
         </div>
-        <div className="stat-card">
+        <div className="stat-card" style={{ position: 'relative' }}>
           <p className="stat-label">Tasks</p>
           <p className="stat-value">{todaysTasks.length}</p>
           <p className="stat-sub">for today</p>
+          <button
+            className="btn btn-sm btn-ghost"
+            onClick={openNewTask}
+            style={{
+              position: 'absolute',
+              top: 8,
+              right: 8,
+              fontSize: 32,
+              padding: '0px 8px',
+              cursor: 'pointer',
+              lineHeight: 1,
+            }}
+            title="Add new task"
+          >
+            +
+          </button>
         </div>
         <div className="stat-card">
           <p className="stat-label">Workouts</p>
@@ -350,6 +453,173 @@ export default function Dashboard() {
             }}
           />
         </ModalPortal>
+      )}
+
+      {/* Task Creation Modal */}
+      {showTaskModal && (
+        <Modal title={editingTask ? 'Edit Task' : 'New Task'} onClose={() => setShowTaskModal(false)}>
+          <div style={{ maxWidth: 500 }}>
+            <div className="form-label">
+              Title
+              <input
+                type="text"
+                className="field"
+                value={taskTitle}
+                onChange={(e) => setTaskTitle(e.target.value)}
+                placeholder="Task title"
+                id="task-modal-title"
+              />
+            </div>
+
+            <div className="form-label">
+              Description
+              <textarea
+                className="field"
+                value={taskDescription}
+                onChange={(e) => setTaskDescription(e.target.value)}
+                placeholder="Optional description"
+                rows={3}
+              />
+            </div>
+
+            <div className="form-label">
+              Due Date
+              <DatePickerInput
+                value={taskDueDate}
+                onChange={setTaskDueDate}
+                placeholder="Pick a date"
+              />
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={repeatEnabled}
+                  onChange={(e) => setRepeatEnabled(e.target.checked)}
+                />
+                Repeat task
+              </label>
+              {repeatEnabled && (
+                <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>
+                  Creates recurring instances; completion is per occurrence.
+                </span>
+              )}
+            </div>
+
+            {repeatEnabled && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
+                <div className="form-label">
+                  Repeat pattern
+                  <select
+                    className="field"
+                    value={repeatPattern}
+                    onChange={(e) => setRepeatPattern(e.target.value as typeof repeatPattern)}
+                  >
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="yearly">Yearly</option>
+                    <option value="decadely">Decadely</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                </div>
+
+                {(repeatPattern === 'weekly' || repeatPattern === 'custom') && (
+                  <div className="form-label">
+                    Target days
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
+                      {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d, idx) => {
+                        const jsDayIndex = (idx + 1) % 7
+                        const isOn = repeatTargetDays.includes(jsDayIndex)
+                        return (
+                          <button
+                            key={d}
+                            type="button"
+                            className="btn btn-sm"
+                            style={{
+                              padding: '6px 10px',
+                              background: isOn ? 'var(--accent-bg)' : 'var(--bg)',
+                              border: `1px solid ${isOn ? 'var(--accent)' : 'var(--border)'}`,
+                              color: isOn ? 'var(--accent)' : 'var(--text)',
+                              borderRadius: 8,
+                              cursor: 'pointer'
+                            }}
+                            onClick={() => {
+                              setRepeatTargetDays(prev =>
+                                prev.includes(jsDayIndex)
+                                  ? prev.filter(x => x !== jsDayIndex)
+                                  : [...prev, jsDayIndex].sort((a, b) => a - b)
+                              )
+                            }}
+                          >
+                            {d}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="form-label">
+                  End date (optional)
+                  <DatePickerInput
+                    value={repeatEndDate}
+                    onChange={setRepeatEndDate}
+                    placeholder="Leave empty for no end date"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="form-label">
+              Urgency
+              <select
+                className="field"
+                value={taskUrgency}
+                onChange={(e) => setTaskUrgency(e.target.value as typeof taskUrgency)}
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+
+            <div className="form-label">
+              Importance
+              <select
+                className="field"
+                value={taskImportance}
+                onChange={(e) => setTaskImportance(e.target.value as typeof taskImportance)}
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+
+            <div className="form-label">
+              Tags
+              <TagSuggestions
+                pastTags={pastTaskTags}
+                currentTags={taskTags}
+                onChange={setTaskTags}
+                inputValue={taskTagInput}
+                onInputChange={setTaskTagInput}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
+              <button className="btn btn-primary" onClick={saveTask} style={{ flex: 1 }}>
+                Save Task
+              </button>
+              <button className="btn btn-ghost" onClick={() => setShowTaskModal(false)} style={{ flex: 1 }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
 
       <section className="card heatmap-card">

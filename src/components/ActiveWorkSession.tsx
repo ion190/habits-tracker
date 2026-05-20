@@ -182,7 +182,13 @@ export default function ActiveWorkSession({ onFinished, onDiscard }: Props) {
       }
     }
 
-    await sync.put('completedWorkSessions', completed as unknown as Record<string, unknown>)
+    // Debug persistence chain
+    try {
+      await sync.put('completedWorkSessions', completed as unknown as Record<string, unknown>)
+    } catch (e) {
+      throw e
+    }
+
     localStorage.removeItem('activeWorkSession')
     window.dispatchEvent(new CustomEvent('workSessionStatusChange'))
     setShowEndModal(false)

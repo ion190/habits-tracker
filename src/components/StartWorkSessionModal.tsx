@@ -28,13 +28,35 @@ export default function StartWorkSessionModal({ onClose, onStarted }: Props) {
     getPastTags('work').then(setPastTags)
   }, [])
 
+  async function awaitFirstDefaultCategoryId() {
+    const existing = await db.workSessionCategories.orderBy('name').toArray()
+    return existing?.[0]?.id ?? ''
+  }
+
+  async function awaitFirstDefaultCategoryName() {
+    const existing = await db.workSessionCategories.orderBy('name').toArray()
+    return existing?.[0]?.name ?? ''
+  }
+
+  async function awaitFirstDefaultCategoryColor() {
+    const existing = await db.workSessionCategories.orderBy('name').toArray()
+    return existing?.[0]?.color ?? 'var(--accent)'
+  }
+
+  async function awaitFirstDefaultCategoryIcon() {
+    const existing = await db.workSessionCategories.orderBy('name').toArray()
+    return existing?.[0]?.icon ?? '💼'
+  }
+
   const toggleTask = (taskId: string) => {
+
     setSelectedTasks(prev =>
       prev.includes(taskId) ? prev.filter(id => id !== taskId) : [...prev, taskId]
     )
   }
 
-  const startSession = () => {
+  const startSession = async () => {
+
     if (durationMinutes <= 0) return
 
     const selectedTaskSnapshots: WorkSessionTaskSnapshot[] = selectedTasks.map(taskId => {
@@ -53,7 +75,37 @@ const session = {
       startedAt: new Date().toISOString(),
     }
 
-    localStorage.setItem('activeWorkSession', JSON.stringify(session))
+    // Ensure category metadata exists on the active session.
+    // WorkSessions page filters out sessions missing categoryId/categoryName.
+    const storedCategory = localStorage.getItem('workSessionCategory')
+    const parsedCategory = storedCategory ? JSON.parse(storedCategory) : null
+
+    const categoryId = parsedCategory?.id ?? ''
+
+    const categoryName = parsedCategory?.name ?? ''
+    const categoryColor = parsedCategory?.color ?? 'var(--accent)'
+    const categoryIcon = parsedCategory?.icon ?? '💼'
+
+    // Fallback: if category isn't selected (or not stored), pick the first default category
+    // so sessions can be displayed.
+    const safeCategoryId = categoryId || (await awaitFirstDefaultCategoryId())
+
+    const safeCategoryName = categoryName || (await awaitFirstDefaultCategoryName())
+    const safeCategoryColor = categoryColor || (await awaitFirstDefaultCategoryColor())
+    const safeCategoryIcon = categoryIcon || (await awaitFirstDefaultCategoryIcon())
+
+
+
+    const sessionWithCategory = {
+      ...session,
+      categoryId: safeCategoryId,
+      categoryName: safeCategoryName,
+      categoryColor: safeCategoryColor,
+      categoryIcon: safeCategoryIcon,
+    }
+
+
+    localStorage.setItem('activeWorkSession', JSON.stringify(sessionWithCategory))
     window.dispatchEvent(new CustomEvent('workSessionStatusChange'))
     onStarted()
   }
@@ -149,7 +201,8 @@ const session = {
         <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
         <button
           className="btn btn-primary"
-          onClick={startSession}
+          onClick={() => { void startSession() }}
+
           disabled={durationMinutes <= 0}
         >
           Start Session ({durationMinutes}m)

@@ -159,28 +159,34 @@ export default function RightSidebar({ onDataChange }: Props) {
 
 
   async function load() {
-    const [h, l, t, cw, acts, js] = await Promise.all([
-      db.habits.filter(h => !h.archivedAt).toArray(),
-      db.habitLogs.toArray(),
-      db.tasks.filter(t => !t.completedAt).toArray(),
-      db.completedWorkouts.orderBy('startedAt').reverse().toArray(),
-      db.calendarActivities.toArray(),
-      db.journalEntries.where('period').equals('daily').toArray(),
-    ])
-    setHabits(h)
-    setLogs(l)
-    setTasks(t.sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? '')).slice(0, 5))
-    setActiveExists(!!localStorage.getItem('activeWorkout'))
-    setActiveSessionExists(!!localStorage.getItem('activeWorkSession'))
-    setActivities(acts)
-    
-    const todayKey = toDateKey(new Date().toISOString())
-    const todaysActs = acts.filter(a => a.date === todayKey)
-    setTodaysActivities(todaysActs)
-    
-    const map = new Map<string, JournalEntry>()
-    js.forEach(j => map.set(j.dateKey, j))
-    setJournals(map)
+    try {
+      const [h, l, t, cw, acts, js] = await Promise.all([
+        db.habits.filter(h => !h.archivedAt).toArray(),
+        db.habitLogs.toArray(),
+        db.tasks.filter(t => !t.completedAt).toArray(),
+        db.completedWorkouts.toArray().then(workouts => workouts.sort((a, b) => 
+          new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
+        )),
+        db.calendarActivities.toArray(),
+        db.journalEntries.where('period').equals('daily').toArray(),
+      ])
+      setHabits(h)
+      setLogs(l)
+      setTasks(t.sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? '')).slice(0, 5))
+      setActiveExists(!!localStorage.getItem('activeWorkout'))
+      setActiveSessionExists(!!localStorage.getItem('activeWorkSession'))
+      setActivities(acts)
+      
+      const todayKey = toDateKey(new Date().toISOString())
+      const todaysActs = acts.filter(a => a.date === todayKey)
+      setTodaysActivities(todaysActs)
+      
+      const map = new Map<string, JournalEntry>()
+      js.forEach(j => map.set(j.dateKey, j))
+      setJournals(map)
+    } catch (err) {
+      // Failed to load sidebar data
+    }
   }
 
   const todayKeyForHabit = toDateKey(new Date().toISOString())

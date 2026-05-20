@@ -177,8 +177,11 @@ type TimeFilter = 'today' | 'week' | 'month' | '3months' | 'year' | 'all'
 // Filter out sessions with obviously corrupted data (NaN, Infinity, negative values)
 // Allow sessions with 0 duration or undefined fields (edge cases)
 function isValidSession(s: CompletedWorkSession): boolean {
-  // Filter invalid category sessions first
-  if (!s.categoryId || !s.categoryName) return false;
+  // For now, don't reject sessions based on missing category metadata.
+  // They should still display even if categories failed to seed.
+  if (!s.id) return false;
+
+
   
   // Only filter out actual bad values: NaN, Infinity, or negative
   // Let sessions with 0 or undefined pass through - they'll display as "0m" or similar
@@ -198,8 +201,18 @@ function isValidSession(s: CompletedWorkSession): boolean {
 function filterSessions(sessions: CompletedWorkSession[], filter: TimeFilter, selectedCategoryIds: string[]): CompletedWorkSession[] {
   // First filter by validity (exclude corrupted data like NaN/Infinity)
   let filtered = sessions.filter(s => isValidSession(s))
+  
+  // Deduplicate by ID (in case of database issues)
+  const seen = new Set<string>()
+  filtered = filtered.filter(s => {
+    if (seen.has(s.id)) return false
+    seen.add(s.id)
+    return true
+  })
+  
   // Then apply category and time filters
   filtered = filtered.filter(s => selectedCategoryIds.length === 0 || selectedCategoryIds.includes(s.categoryId))
+
   const days: Record<TimeFilter, number> = { today: 1, week: 7, month: 30, '3months': 90, year: 365, all: Infinity }
   const cutoff = new Date()
   cutoff.setDate(cutoff.getDate() - (days[filter] || 365))
@@ -218,19 +231,29 @@ export default function WorkSessions() {
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('week')
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([])
   const [searchTerm, setSearchTerm] = useState('')
+
   const [detailSession, setDetailSession] = useState<CompletedWorkSession | null>(null)
 
   async function reload() {
-    const [cats, sess] = await Promise.all([
-      db.workSessionCategories.orderBy('name').toArray(),
-      db.completedWorkSessions.orderBy('startedAt').reverse().toArray(),
-    ])
-    setCategories(cats)
-    setSessions(sess)
-    setLoading(false)
+    try {
+      const [cats, sess] = await Promise.all([
+        db.workSessionCategories.orderBy('name').toArray(),
+        db.completedWorkSessions.toArray().then(s => s.sort((a, b) => 
+          new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
+        )),
+      ])
+      setCategories(cats)
+      setSessions(sess)
+
+      setLoading(false)
+    } catch (err) {
+      setLoading(false)
+    }
   }
 
-useEffect(() => {
+  useEffect(() => {
+    let cleanup: (() => void) | null = null
+
     reload().then(() => {
       const handleStatusChange = () => {
         setShowActive(!!localStorage.getItem('activeWorkSession'))
@@ -249,19 +272,22 @@ useEffect(() => {
       // Check for pending modal from overlay
       const pendingModal = localStorage.getItem('workSessionPendingModal')
       if (pendingModal === 'time') {
-        // setShowTimeModal(true)
         localStorage.removeItem('workSessionPendingModal')
       } else if (pendingModal === 'end') {
-        // setShowEndModal(true)
         localStorage.removeItem('workSessionPendingModal')
       }
-      
-      return () => {
+
+      cleanup = () => {
         window.removeEventListener('workSessionStatusChange', handleStatusChange)
         window.removeEventListener('showEndWorkSessionModal', handleShowEndModal)
       }
     })
+
+    return () => {
+      if (cleanup) cleanup()
+    }
   }, [])
+
 
   const filteredSessionsForList = useMemo(() =>
     filterSessions(sessions, timeFilter, selectedCategoryIds)
@@ -284,11 +310,13 @@ useEffect(() => {
     return [...predefined, ...custom]
   }, [categories, sessions])
 
-  const filteredSessions = filterSessions(sessions, timeFilter, selectedCategoryIds)
-  const totalTime = filteredSessions.reduce((sum, s) => sum + s.actualDurationSeconds, 0)
-  const avgProductivity = filteredSessions.length > 0
-    ? Math.round(filteredSessions.reduce((sum, s) => sum + s.productivityPct, 0) / filteredSessions.length)
-    : 0
+  // derived metrics (intentionally unused for now; keep for future UI)
+  // const filteredSessions = filterSessions(sessions, timeFilter, selectedCategoryIds)
+  // const totalTime = filteredSessions.reduce((sum, s) => sum + s.actualDurationSeconds, 0)
+  // const avgProductivity = filteredSessions.length > 0
+  //   ? Math.round(filteredSessions.reduce((sum, s) => sum + s.productivityPct, 0) / filteredSessions.length)
+  //   : 0
+
 
 
 
@@ -367,13 +395,15 @@ useEffect(() => {
 
       <section className="card heatmap-card">
         <h2 className="card-title">Productivity heatmap</h2>
-        <WorkSessionHeatmap sessions={filteredSessions} daysBack={365} />
+        <WorkSessionHeatmap sessions={filteredSessionsForList} daysBack={365} />
+
       </section>
 
 
 
       <section className="card">
         <h2 className="card-title">Sessions ({filteredSessionsForList.length})</h2>
+
         {filteredSessionsForList.length === 0 ? (
           <p className="empty-hint">
             No sessions yet.{' '}

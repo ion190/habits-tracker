@@ -28,6 +28,34 @@ const habitLogs: HabitLog[] = [
   { id: 'log1', habitId: '1', completedAt: new Date(Date.now() - 86400000).toISOString(), value: 12 },
 ];
 
+// ── Device tokens store (in-memory, replace with DB) ──────
+interface DeviceTokenRecord {
+  userId: string;
+  token: string;
+  platform: 'web' | 'mobile-web';
+  userAgent?: string;
+  registeredAt: string;
+  lastSeen: string;
+}
+
+const deviceTokens: DeviceTokenRecord[] = [];
+
+// ── Notification preferences (in-memory) ──────────────────
+interface NotificationPreferences {
+  userId: string;
+  enabledNotifications: boolean;
+  notificationTypes: {
+    tasks: boolean;
+    habits: boolean;
+    workouts: boolean;
+  };
+  quietHoursStart?: string;
+  quietHoursEnd?: string;
+  updatedAt: string;
+}
+
+const notificationPreferences: NotificationPreferences[] = [];
+
 // Middleware
 app.use(helmet());
 app.use(cors());
@@ -155,6 +183,238 @@ app.get('/tasks', authenticateJWT, (req: Request, res: Response) => {
   res.status(200).json(result);
 });
 
+// ── Notifications Endpoints ────────────────────────────────
+
+/**
+ * POST /api/notifications/register-token
+ * Register a device token for push notifications
+ */
+app.post('/api/notifications/register-token', authenticateJWT, (req: Request, res: Response) => {
+  try {
+    const { userId, token, platform } = req.body;
+    const userReq = (req as Request & { user: JWTPayload }).user;
+
+    // Verify user owns this token
+    if (userId !== userReq.sub) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    // Check if token already exists
+    const existing = deviceTokens.find(dt => dt.token === token);
+    if (existing) {
+      existing.lastSeen = new Date().toISOString();
+      existing.userAgent = req.body.userAgent;
+      return res.status(200).json({ success: true, message: 'Token updated' });
+    }
+
+    // Register new token
+    deviceTokens.push({
+      userId,
+      token,
+      platform: platform || 'web',
+      userAgent: req.body.userAgent,
+      registeredAt: new Date().toISOString(),
+      lastSeen: new Date().toISOString(),
+    });
+
+    console.log(`[Notifications] Device token registered for user ${userId}: ${token.substring(0, 20)}...`);
+
+    res.status(201).json({ success: true, message: 'Device token registered' });
+  } catch (error) {
+    console.error('[Notifications] Register token error:', error);
+    res.status(500).json({ error: 'Failed to register device token' });
+  }
+});
+
+/**
+ * POST /api/notifications/unregister-token
+ * Unregister a device token
+ */
+app.post('/api/notifications/unregister-token', authenticateJWT, (req: Request, res: Response) => {
+  try {
+    const { userId, token } = req.body;
+    const userReq = (req as Request & { user: JWTPayload }).user;
+
+    if (userId !== userReq.sub) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    const index = deviceTokens.findIndex(dt => dt.token === token && dt.userId === userId);
+    if (index !== -1) {
+      deviceTokens.splice(index, 1);
+      console.log(`[Notifications] Device token unregistered for user ${userId}`);
+    }
+
+    res.status(200).json({ success: true, message: 'Device token unregistered' });
+  } catch (error) {
+    console.error('[Notifications] Unregister token error:', error);
+    res.status(500).json({ error: 'Failed to unregister device token' });
+  }
+});
+
+/**
+ * GET /api/notifications/preferences/:userId
+ * Get user's notification preferences
+ */
+app.get('/api/notifications/preferences/:userId', authenticateJWT, (req: Request, res: Response) => {
+  try {
+    const userReq = (req as Request & { user: JWTPayload }).user;
+    const { userId } = req.params;
+
+    if (userId !== userReq.sub) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    let prefs = notificationPreferences.find(p => p.userId === userId);
+    if (!prefs) {
+      prefs = {
+        userId,
+        enabledNotifications: true,
+        notificationTypes: {
+          tasks: true,
+          habits: true,
+          workouts: true,
+        },
+        updatedAt: new Date().toISOString(),
+      };
+      notificationPreferences.push(prefs);
+    }
+
+    res.status(200).json(prefs);
+  } catch (error) {
+    console.error('[Notifications] Get preferences error:', error);
+    res.status(500).json({ error: 'Failed to get notification preferences' });
+  }
+});
+
+/**
+ * PUT /api/notifications/preferences/:userId
+ * Update user's notification preferences
+ */
+app.put('/api/notifications/preferences/:userId', authenticateJWT, (req: Request, res: Response) => {
+  try {
+    const userReq = (req as Request & { user: JWTPayload }).user;
+    const { userId } = req.params;
+
+    if (userId !== userReq.sub) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    let prefs = notificationPreferences.find(p => p.userId === userId);
+    if (!prefs) {
+      prefs = {
+        userId,
+        enabledNotifications: true,
+        notificationTypes: {
+          tasks: true,
+          habits: true,
+          workouts: true,
+        },
+        updatedAt: new Date().toISOString(),
+      };
+      notificationPreferences.push(prefs);
+    }
+
+    // Update preferences
+    if (req.body.enabledNotifications !== undefined) {
+      prefs.enabledNotifications = req.body.enabledNotifications;
+    }
+    if (req.body.notificationTypes) {
+      prefs.notificationTypes = { ...prefs.notificationTypes, ...req.body.notificationTypes };
+    }
+    if (req.body.quietHoursStart !== undefined) {
+      prefs.quietHoursStart = req.body.quietHoursStart;
+    }
+    if (req.body.quietHoursEnd !== undefined) {
+      prefs.quietHoursEnd = req.body.quietHoursEnd;
+    }
+    prefs.updatedAt = new Date().toISOString();
+
+    res.status(200).json({ success: true, message: 'Preferences updated', data: prefs });
+  } catch (error) {
+    console.error('[Notifications] Update preferences error:', error);
+    res.status(500).json({ error: 'Failed to update notification preferences' });
+  }
+});
+
+/**
+ * POST /api/notifications/send
+ * Send a notification to user devices (admin/system endpoint)
+ */
+app.post('/api/notifications/send', authenticateJWT, (req: Request, res: Response) => {
+  try {
+    const userReq = (req as Request & { user: JWTPayload }).user;
+    const { userId, type, title, body, data, notifyAll } = req.body;
+
+    // Only admin or the user can send to themselves
+    if (userReq.role !== 'ADMIN' && userId !== userReq.sub) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    // Get user's tokens
+    const tokens = deviceTokens.filter(dt => dt.userId === userId);
+    if (tokens.length === 0) {
+      return res.status(200).json({
+        success: false,
+        message: 'No device tokens registered for this user',
+      });
+    }
+
+    // In a real app, you would use Firebase Admin SDK to send to these tokens
+    // For now, we'll just simulate the send
+    const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    console.log(`[Notifications] Sending notification to ${tokens.length} device(s):`);
+    console.log(`  Title: ${title}`);
+    console.log(`  Body: ${body}`);
+    console.log(`  Type: ${type}`);
+    console.log(`  Tokens: ${tokens.map(t => t.token.substring(0, 20) + '...').join(', ')}`);
+
+    res.status(200).json({
+      success: true,
+      messageId,
+      message: `Notification queued for ${tokens.length} device(s)`,
+      deviceCount: tokens.length,
+    });
+  } catch (error) {
+    console.error('[Notifications] Send notification error:', error);
+    res.status(500).json({ error: 'Failed to send notification' });
+  }
+});
+
+/**
+ * GET /api/notifications/devices/:userId
+ * Get list of registered devices for a user (for user/admin viewing)
+ */
+app.get('/api/notifications/devices/:userId', authenticateJWT, (req: Request, res: Response) => {
+  try {
+    const userReq = (req as Request & { user: JWTPayload }).user;
+    const { userId } = req.params;
+
+    if (userReq.role !== 'ADMIN' && userId !== userReq.sub) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    const userDevices = deviceTokens
+      .filter(dt => dt.userId === userId)
+      .map(dt => ({
+        token: dt.token.substring(0, 20) + '...',
+        platform: dt.platform,
+        registeredAt: dt.registeredAt,
+        lastSeen: dt.lastSeen,
+      }));
+
+    res.status(200).json({
+      userId,
+      deviceCount: userDevices.length,
+      devices: userDevices,
+    });
+  } catch (error) {
+    console.error('[Notifications] Get devices error:', error);
+    res.status(500).json({ error: 'Failed to get devices' });
+  }
+});
+
 // ── Root & Swagger ────────────────────────────────────────
 app.get('/', (req: Request, res: Response) => {
   res.json({ 
@@ -175,9 +435,6 @@ app.use('*', (req: Request, res: Response) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 REST API running at http://localhost:${PORT}`);
-  console.log(`📚 Swagger docs: http://localhost:${PORT}/api-docs`);
-  console.log(`🔑 Test login: POST /token { "email": "user@example.com", "password": "password" }`);
-  console.log(`⏱️  JWT expires in 60 seconds`);
+  // Server listening
 });
 

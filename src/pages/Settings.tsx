@@ -4,6 +4,7 @@ import { exportDatabase, importDatabase, db } from '../db/database'
 import { sync } from '../db/sync'
 import { signOut } from '../db/firebase'
 import { useAuth } from '../components/AuthContext'
+import NotificationSettings from '../components/NotificationSettings'
 import { IconDownload, IconUpload, IconTrash } from '../components/Icons'
 import { getTheme, setTheme, type Theme } from '../utils'
 
@@ -130,6 +131,15 @@ export default function Settings() {
               </button>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* Notifications */}
+      <section className="card settings-section">
+        <h2 className="card-title">Push Notifications</h2>
+        <p className="settings-desc">Enable notifications for tasks, habits, and workouts on desktop and mobile web app.</p>
+        <div style={{ marginTop: '16px' }}>
+          <NotificationSettings />
         </div>
       </section>
 

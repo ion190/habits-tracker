@@ -15,6 +15,7 @@ const dexieTables: Record<string, Table> = {
   exercises:              db.exercises,
   workoutPlans:           db.workoutPlans,
   completedWorkouts:      db.completedWorkouts,
+  workSessionCategories:  db.workSessionCategories,
   completedWorkSessions:  db.completedWorkSessions,
   journalEntries:         db.journalEntries,
   calendarActivities:     db.calendarActivities,
@@ -78,7 +79,7 @@ class SyncEngine {
         await setDoc(this.docRef(table, record.id as string), stripUndefined(record))
         return
       } catch (e) {
-        console.warn(`[Sync] Firestore put failed for ${table}/${record.id}, queuing`, e)
+        // Firestore put failed, will be queued
       }
     }
     await this.enqueue('put', table, record.id as string, record)
@@ -91,7 +92,7 @@ class SyncEngine {
         await deleteDoc(this.docRef(table, id))
         return
       } catch (e) {
-        console.warn(`[Sync] Firestore delete failed for ${table}/${id}, queuing`, e)
+        // Firestore delete failed, will be queued
       }
     }
     await this.enqueue('delete', table, id)
@@ -128,7 +129,6 @@ class SyncEngine {
         await batch.commit()
         await db.syncQueue.bulkDelete(chunk.map(e => e.id))
       } catch (e) {
-        console.error('[Sync] Batch flush failed', e)
         for (const entry of chunk) {
           if (entry.retries >= 5) await db.syncQueue.delete(entry.id)
           else await db.syncQueue.update(entry.id, { retries: entry.retries + 1 })
@@ -146,7 +146,6 @@ class SyncEngine {
       await this.flushQueue()
       this.setStatus('synced')
     } catch (e) {
-      console.error('[Sync] Manual flush failed', e)
       this.setStatus('error')
     }
   }
@@ -155,21 +154,17 @@ class SyncEngine {
     if (!this.uid) return
     if (this._hydrated) return
     this._hydrated = true
-    console.log('[Sync] Hydrating from Firestore…')
     for (const table of Object.keys(dexieTables)) {
       try {
         const snap    = await getDocs(collection(firestore, 'users', this.uid, table))
         const records = snap.docs.map(d => d.data())
         if (records.length > 0) {
           await dexieTables[table].bulkPut(records as never[])
-        } else {
-          console.log(`[Sync] No data found for ${table}`)
         }
       } catch (e) {
-        console.warn(`[Sync] Skipping empty/missing collection ${table}:`, e)
+        // Skipping empty/missing collection
       }
     }
-    console.log('[Sync] Hydration complete')
     // Flush any offline queue after hydrating
     if (navigator.onLine) await this.flushQueue()
   }

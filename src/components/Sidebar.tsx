@@ -92,54 +92,12 @@ export default function Sidebar() {
             <IconGrid /> Dashboard
           </NavLink>
 
-<NavLink to="/tasks" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
-            <IconChecklist /> Tasks
-          </NavLink>
-
-          
           {/* Calendar */}
           <NavLink to="/calendar" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
             <IconCalendar /> Calendar
           </NavLink>
 
-          {/* Habits (collapsible) */}
-          <div>
-            <div className={`sidebar-parent ${(habitsMatch ? 'active' : '')}`}>
-              <NavLink to="/habits" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} style={{ flex: 1 }}>
-                <IconCheck /> Habits
-              </NavLink>
-              <span className="sidebar-toggle" onClick={() => setHabitsOpen(o => !o)}>
-                {habitsOpen ? '▲' : '▼'}
-              </span>
-            </div>
-            {habitsOpen && (
-              <div className="sidebar-children">
-                {habits.map(h => (
-                  <NavLink key={h.id} to={`/habits/${h.id}`}
-                    className={({ isActive }) => `sidebar-link sidebar-child ${isActive ? 'active' : ''}`}>
-                    <span className="habit-dot-sm" style={{ background: h.color }} />
-                    {h.name}
-                  </NavLink>
-                ))}
-              </div>
-            )}
-          </div>
-
-                    <NavLink to="/work-sessions"
-            className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''} ${isSessionActive ? 'ongoing-workout' : ''}`}>
-            <IconTimer /> Work Sessions
-          </NavLink>
-
-          <NavLink to="/workouts"
-            className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''} ${isWorkoutActive ? 'ongoing-workout' : ''}`}>
-            <IconDumbbell /> Workouts
-          </NavLink>
-
-
-
-
-
-          {/* Journal (collapsible with preview) */}
+{/* Journal (collapsible with preview) */}
           <div>
             <div className={`sidebar-parent ${(journalMatch ? 'active' : '')}`}>
               <NavLink to="/journal" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} style={{ flex: 1 }}>
@@ -181,6 +139,53 @@ export default function Sidebar() {
             )}
           </div>
 
+          
+
+          
+
+
+
+<NavLink to="/tasks" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+            <IconChecklist /> Tasks
+          </NavLink>
+
+                    <NavLink to="/work-sessions"
+            className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''} ${isSessionActive ? 'ongoing-workout' : ''}`}>
+            <IconTimer /> Work Sessions
+          </NavLink>
+
+          <NavLink to="/workouts"
+            className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''} ${isWorkoutActive ? 'ongoing-workout' : ''}`}>
+            <IconDumbbell /> Gym
+          </NavLink>
+
+{/* Habits (collapsible) */}
+          <div>
+            <div className={`sidebar-parent ${(habitsMatch ? 'active' : '')}`}>
+              <NavLink to="/habits" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} style={{ flex: 1 }}>
+                <IconCheck /> Habits
+              </NavLink>
+              <span className="sidebar-toggle" onClick={() => setHabitsOpen(o => !o)}>
+                {habitsOpen ? '▲' : '▼'}
+              </span>
+            </div>
+            {habitsOpen && (
+              <div className="sidebar-children">
+                {habits.map(h => (
+                  <NavLink key={h.id} to={`/habits/${h.id}`}
+                    className={({ isActive }) => `sidebar-link sidebar-child ${isActive ? 'active' : ''}`}>
+                    <span className="habit-dot-sm" style={{ background: h.color }} />
+                    {h.name}
+                  </NavLink>
+                ))}
+              </div>
+            )}
+          </div>
+
+
+
+          
+
           <NavLink to="/settings" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
             <IconSettings /> Settings
           </NavLink>
@@ -221,23 +226,28 @@ export default function Sidebar() {
         <NavLink to="/dashboard" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`} aria-label="Home">
           <IconGrid />
         </NavLink>
-        <NavLink to="/habits" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`} aria-label="Habits">
-          <IconCheck />
-        </NavLink>
-        <NavLink to="/tasks" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`} aria-label="Tasks">
-          <IconChecklist />
-        </NavLink>
-        <NavLink to="/workouts" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`} aria-label="Workouts">
-          <IconDumbbell />
-        </NavLink>
-        <NavLink to="/work-sessions" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`} aria-label="Focus">
-          <IconTimer />
+        
+        
+        
+        <NavLink to="/calendar" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`} aria-label="Calendar">
+          <IconCalendar />
         </NavLink>
         <NavLink to="/journal" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`} aria-label="Journal">
           <IconBook />
         </NavLink>
-        <NavLink to="/calendar" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`} aria-label="Calendar">
-          <IconCalendar />
+
+        <NavLink to="/tasks" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`} aria-label="Tasks">
+          <IconChecklist />
+        </NavLink>
+        <NavLink to="/work-sessions" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`} aria-label="Focus">
+          <IconTimer />
+        </NavLink>
+        <NavLink to="/workouts" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`} aria-label="Workouts">
+          <IconDumbbell />
+        </NavLink>
+        
+        <NavLink to="/habits" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`} aria-label="Habits">
+          <IconCheck />
         </NavLink>
         <NavLink to="/settings" className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`} aria-label="Settings">
           <IconSettings />

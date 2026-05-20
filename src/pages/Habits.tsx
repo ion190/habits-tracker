@@ -175,7 +175,7 @@ function HabitModal({
         )}
 
         <div className="form-label">
-          Tags
+          
           <TagSuggestions
             pastTags={pastTags}
             currentTags={tags}
@@ -320,7 +320,7 @@ export default function Habits() {
   useEffect(() => {
     const missing = habits.filter(h => h.tags === undefined || h.tags === null)
     if (missing.length > 0) {
-      console.warn(`⚠️ Found ${missing.length} habits missing tags property:`, missing.map(h => h.name))
+      // TODO: Handle missing tags
     }
   }, [habits])
 
@@ -379,7 +379,6 @@ export default function Habits() {
       db.habits.toArray(),
       db.habitLogs.toArray(),
     ])
-    console.log('🔥 Habits reload:', { totalHabits: h.length, activeHabits: h.filter(x => !x.archivedAt).length, totalLogs: l.length, todayLogs: l.filter(log => toDateKey(log.completedAt) === toDateKey(new Date().toISOString())).length })
     setHabits(h.filter(x => !x.archivedAt))
     setArchivedHabits(h.filter(x => x.archivedAt))
     setLogs(l)
