@@ -309,11 +309,11 @@ a { color: inherit; text-decoration: none; }
 }
 
 /* ── Stats row ──────────────────────────────────────────── */
-.stats-row {
+/* .stats-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
-}
+} */
 
 .stat-card {
   background: var(--code-bg);
@@ -1362,6 +1362,48 @@ select.field {
   display: none;
 }
 
+/* Dashboard top row: Calendar + Tasks + Weekly Activities */
+.dashboard-top-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+Ensure the 3 stat cards in “Today & This Week” wrap into multiple rows
+.stats-col {
+  display: grid;
+  grid-template-columns: 1fr !important;
+}
+
+/* Give the top 3 cards a consistent fixed height on desktop so they stay aligned from the top */
+.dashboard-top-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-top-card__inner {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (min-width: 768px) {
+  .dashboard-top-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  /* .dashboard-top-card {
+    height: 360px;
+  } */
+
+  .dashboard-top-card__inner {
+    flex: 1;
+  }
+}
+
+
+
+
 /* Hardening: never show mobile-only blocks on desktop/tablet */
 @media (min-width: 768px) {
   .only-mobile {
@@ -1766,11 +1808,11 @@ select.field {
 
   h1 { font-size: 24px; }
 
-  .stats-row {
+  /* .stats-row {
     display: flex;
     flex-direction: row;
     gap: 12px;
-  }
+  } */
 
   .stat-card {
     flex: 1;

@@ -6,7 +6,203 @@ import { formatDuration, toDateKey, startOfWeek, isTaskDueOnDate, getPastTags } 
 
 import { sync } from '../db/sync'
 import UnifiedHeatmap from '../components/UnifiedHeatmap'
+import TasksMobileQuadrant from './TasksMobileQuadrant'
+
+// ── Mini calendar (ported from RightSidebar) ──────────────────────────────
+function SidebarCalendar({
+  activities,
+  onDayClick,
+}: {
+  activities: CalendarActivity[]
+  onDayClick: (date: string) => void
+}) {
+  const [viewDate, setViewDate] = useState(new Date())
+  const today = toDateKey(new Date().toISOString())
+
+  const year = viewDate.getFullYear()
+  const month = viewDate.getMonth()
+  const firstDay = new Date(year, month, 1).getDay()
+  const pad = firstDay === 0 ? 6 : firstDay - 1
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+
+  return (
+    <div>
+      <div
+        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}
+      >
+        <button
+          className="btn btn-ghost"
+          style={{ padding: '2px 6px', fontSize: 12 }}
+          onClick={() => setViewDate(new Date(year, month - 1, 1))}
+        >
+          ‹
+        </button>
+        <span style={{ fontSize: 12, fontWeight: 600 }}>
+          {viewDate.toLocaleString('en-US', { month: 'short', year: 'numeric' })}
+        </span>
+        <button
+          className="btn btn-ghost"
+          style={{ padding: '2px 6px', fontSize: 12 }}
+          onClick={() => setViewDate(new Date(year, month + 1, 1))}
+        >
+          ›
+        </button>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1, textAlign: 'center' }}>
+        {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
+          <div key={i} style={{ fontSize: 9, opacity: 0.45, padding: '1px 0', fontWeight: 600 }}>
+            {d}
+          </div>
+        ))}
+        {Array(pad)
+          .fill(null)
+          .map((_, i) => (
+            <div key={`p${i}`} />
+          ))}
+        {Array.from({ length: daysInMonth }, (_, i) => {
+          const day = i + 1
+          const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+          const isToday = key === today
+          const hasActivity = activities.some(a => a.date === key)
+
+          return (
+            <div
+              key={key}
+              onClick={() => onDayClick(key)}
+              style={{
+                padding: '3px 1px 8px',
+                borderRadius: 5,
+                fontSize: 11,
+                position: 'relative',
+                background: isToday ? 'var(--accent)' : 'transparent',
+                color: isToday ? '#fff' : 'var(--text)',
+                fontWeight: isToday ? 700 : 400,
+                cursor: 'pointer',
+              }}
+            >
+              {day}
+              {hasActivity && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: 4,
+                    height: 4,
+                    background: 'var(--accent)',
+                    borderRadius: '50%',
+                  }}
+                />
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function DayPopup({
+  date,
+  activities,
+  tasks,
+  journal,
+  onClose,
+  onNavigate,
+}: {
+  date: string
+  activities: CalendarActivity[]
+  tasks: Task[]
+  journal?: JournalEntry
+  onClose: () => void
+  onNavigate: (path: string) => void
+}) {
+  const label = new Date(date + 'T00:00:00').toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  })
+  const dayActs = activities.filter(a => a.date === date)
+  const dayTasks = tasks.filter(
+    t => isTaskDueOnDate(t, date) && !(t.completedAt && toDateKey(t.completedAt) === date)
+  )
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top: '100%',
+        right: 0,
+        zIndex: 300,
+        marginTop: 4,
+        background: 'var(--bg)',
+        border: '1px solid var(--border)',
+        borderRadius: 12,
+        padding: 14,
+        width: 240,
+        boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
+        <strong style={{ fontSize: 13 }}>{label}</strong>
+        <button className="btn btn-ghost" style={{ padding: '0 4px', fontSize: 16 }} onClick={onClose}>
+          ×
+        </button>
+      </div>
+
+      {dayActs.length > 0 && (
+        <div style={{ marginBottom: 8 }}>
+          {dayActs.map(a => (
+            <div key={a.id} style={{ display: 'flex', gap: 6, padding: '3px 0', fontSize: 12, alignItems: 'center' }}>
+              <div style={{ width: 8, height: 8, borderRadius: 2, background: a.color, flexShrink: 0 }} />
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title}</span>
+              <span style={{ opacity: 0.5, fontSize: 10, flexShrink: 0 }}>{a.startTime}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {dayTasks.length > 0 && (
+        <div style={{ marginBottom: 8 }}>
+          {dayTasks.map(t => (
+            <div key={t.id} style={{ display: 'flex', gap: 6, padding: '2px 0', fontSize: 12 }}>
+              <span style={{ opacity: 0.4, flexShrink: 0 }}>✅</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {journal && (
+        <div style={{ marginBottom: 8, padding: '5px 7px', background: 'var(--accent-bg)', borderRadius: 6, fontSize: 11 }}>
+          <span style={{ color: 'var(--accent)', fontWeight: 600 }}>📅 Journal written</span>
+        </div>
+      )}
+
+      {dayActs.length === 0 && dayTasks.length === 0 && !journal && (
+        <p style={{ fontSize: 12, opacity: 0.5, margin: '0 0 8px' }}>Nothing scheduled</p>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+        <button className="btn btn-ghost" style={{ fontSize: 11, justifyContent: 'flex-start' }} onClick={() => onNavigate('/calendar')}>
+          📅 Open in calendar
+        </button>
+        <button
+          className="btn btn-ghost"
+          style={{ fontSize: 11, justifyContent: 'flex-start' }}
+          onClick={() => onNavigate(`/journal?period=daily&key=${date}`)}
+        >
+          📝 Journal this day
+        </button>
+      </div>
+    </div>
+  )
+}
+
 import HabitValueModal from '../components/HabitValueModal'
+
 import StartWorkoutModal from '../components/StartWorkoutModal'
 import StartWorkSessionModal from '../components/StartWorkSessionModal'
 import ModalPortal from '../components/ModalPortal'
@@ -95,9 +291,14 @@ export default function Dashboard() {
   const [tomorrowActivities, setTomorrowActivities] = useState<CalendarActivity[]>([])
   const [tomorrowKey, setTomorrowKey] = useState('')
   const [now, setNow] = useState(new Date())
+  const [dashboardPopupDate, setDashboardPopupDate] = useState<string | null>(null)
+  const [taskFilter, setTaskFilter] = useState<'all' | 'today'>('all')
+
 
   // Task modal state
+
   const [showTaskModal, setShowTaskModal] = useState(false)
+
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [taskTitle, setTaskTitle] = useState('')
   const [taskDescription, setTaskDescription] = useState('')
@@ -224,11 +425,24 @@ export default function Dashboard() {
     return isTaskDueOnDate(t, today)
   })
 
+  const allActiveTasks = tasks.filter((t) => !t.archivedAt && !t.completedAt)
+  const tasksForDashboard = taskFilter === 'today' ? todaysTasks : allActiveTasks
+
+
+  // Eisenhower matrix grouping (urgent/important) from active tasks
+  const activeTasksForMatrix = tasks.filter(t => !t.archivedAt && !t.completedAt)
+
+  const urgent_important = activeTasksForMatrix.filter(t => t.urgency === 'high' && t.importance === 'high')
+  const not_urgent_important = activeTasksForMatrix.filter(t => t.urgency === 'low' && t.importance === 'high')
+  const urgent_not_important = activeTasksForMatrix.filter(t => t.urgency === 'high' && t.importance === 'low')
+  const not_urgent_not_important = activeTasksForMatrix.filter(t => t.urgency === 'low' && t.importance === 'low')
 
   const weekWorkouts = workoutsFromPreviousWeek ? [] : workouts
+
   const currentWeekTime = weekWorkouts.reduce((s, w) => s + w.totalDurationSeconds, 0)
 
   async function toggleHabit(habitId: string, value?: number) {
+
     const existing = logs.find((l) => l.habitId === habitId && toDateKey(l.completedAt) === today)
     if (existing) {
       await sync.delete('habitLogs', existing.id)
@@ -284,7 +498,57 @@ export default function Dashboard() {
     setShowTaskModal(true)
   }
 
+  async function toggleTaskDone(task: Task) {
+    const completedAt = task.completedAt ? undefined : new Date().toISOString()
+    await sync.put(
+      'tasks',
+      {
+        ...task,
+        completedAt,
+        archivedAt: task.archivedAt,
+      } as unknown as Record<string, unknown>
+    )
+    load()
+  }
+
+  async function archiveTaskFromDashboard(task: Task) {
+    await sync.put(
+      'tasks',
+      {
+        ...task,
+        archivedAt: new Date().toISOString(),
+      } as unknown as Record<string, unknown>
+    )
+    load()
+  }
+
+  function openEditTaskModalFromDashboard(task: Task) {
+    setEditingTask(task)
+    setTaskTitle(task.title)
+    setTaskDescription(task.description ?? '')
+    setTaskDueDate(task.dueDate ? task.dueDate.slice(0, 10) : '')
+    setTaskUrgency(task.urgency)
+    setTaskImportance(task.importance)
+    setTaskTags(task.tags ?? [])
+    setTaskTagInput('')
+
+    if (task.recurrence) {
+      setRepeatEnabled(true)
+      setRepeatPattern(task.recurrence.pattern)
+      setRepeatTargetDays(task.recurrence.targetDays ?? [1, 3, 5])
+      setRepeatEndDate(task.recurrence.endDate ?? '')
+    } else {
+      setRepeatEnabled(false)
+      setRepeatPattern('weekly')
+      setRepeatTargetDays([1, 3, 5])
+      setRepeatEndDate('')
+    }
+
+    setShowTaskModal(true)
+  }
+
   async function saveTask() {
+
     if (!taskTitle.trim()) return
     if (!taskDueDate && repeatEnabled) return
 
@@ -330,46 +594,137 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="stats-row">
-        <div className="stat-card">
-          <p className="stat-label">Habits</p>
-          <p className="stat-value">{todayLogs.length}/{habits.length}</p>
-          <p className="stat-sub">done today</p>
-        </div>
-        <div className="stat-card">
-          <p className="stat-label">Journal</p>
-          <p className="stat-value">{todayJournal ? '✍️' : '—'}</p>
-          <p className="stat-sub" style={{ color: todayJournal ? '#22c55e' : undefined }}>
-            {todayJournal ? 'written today' : 'not written'}
-          </p>
-        </div>
-        <div className="stat-card" style={{ position: 'relative' }}>
-          <p className="stat-label">Tasks</p>
-          <p className="stat-value">{todaysTasks.length}</p>
-          <p className="stat-sub">for today</p>
-          <button
-            className="btn btn-sm btn-ghost"
-            onClick={openNewTask}
-            style={{
-              position: 'absolute',
-              top: 8,
-              right: 8,
-              fontSize: 32,
-              padding: '0px 8px',
-              cursor: 'pointer',
-              lineHeight: 1,
-            }}
-            title="Add new task"
-          >
-            +
-          </button>
-        </div>
-        <div className="stat-card">
-          <p className="stat-label">Workouts</p>
-          <p className="stat-value">{weekWorkouts.length}/{weeklyTarget}</p>
-          <p className="stat-sub">this week</p>
-        </div>
+      {/* Dashboard top row: Calendar + Today Tasks + 3 stats (desktop in one row, mobile stacked) */}
+      <div className="dashboard-top-grid">
+        {/* Calendar card (mini calendar + day popup) */}
+        <section className="card dashboard-top-card" style={{ padding: 14 }}>
+          <div className="dashboard-top-card__inner">
+            <h2 className="card-title">Calendar</h2>
+
+            <div className="rs-card" style={{ border: 'none', padding: 0, background: 'transparent' }}>
+              <div style={{ position: 'relative' }}>
+                <SidebarCalendar activities={activities} onDayClick={setDashboardPopupDate} />
+
+                {dashboardPopupDate && (
+                  <DayPopup
+                    date={dashboardPopupDate}
+                    activities={activities}
+                    tasks={tasks}
+                    journal={todayJournal && dashboardPopupDate === today ? todayJournal : undefined}
+                    onClose={() => setDashboardPopupDate(null)}
+                    onNavigate={(path) => { navigate(path); setDashboardPopupDate(null) }}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        {/* Today tasks card with + button */}
+        <section className="card" style={{ padding: 14,  }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <h2 className="card-title" style={{ marginBottom: 0 }}>Tasks</h2>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button
+              className={taskFilter === 'all' ? 'btn btn-sm btn-primary' : 'btn btn-sm btn-ghost'}
+              onClick={() => setTaskFilter('all')}
+              title="Show all tasks"
+            >
+              All
+            </button>
+            <button
+              className={taskFilter === 'today' ? 'btn btn-sm btn-primary' : 'btn btn-sm btn-ghost'}
+              onClick={() => setTaskFilter('today')}
+              title="Show tasks for today"
+            >
+              Today
+            </button>
+          </div>
+            <button
+              className="btn btn-sm btn-ghost"
+              onClick={openNewTask}
+              style={{ fontSize: 32,  cursor: 'pointer', lineHeight: 1 }}
+              title="Add new task"
+            >
+              +
+            </button>
+          </div>
+
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                overflowY: 'auto',
+                
+              }}
+            >
+              {tasksForDashboard.length === 0 ? (
+                <p className="empty-hint" style={{ margin: 0 }}>No tasks</p>
+              ) : (
+                tasksForDashboard.map((task) => {
+                const done = !!(task.completedAt && toDateKey(task.completedAt) === today)
+                return (
+                  <div
+                    key={task.id}
+                    style={{  background: 'var(--card-bg)', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10 }}
+                    onClick={() => navigate('/tasks?taskId=' + task.id)}
+                  >
+                    <button
+                      className="btn btn-sm btn-ghost"
+                      style={{ width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        toggleTaskDone(task)
+                      }}
+                      title={done ? 'Mark as not done' : 'Mark as done'}
+                    >
+                      {done ? '✓' : '○'}
+                    </button>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontWeight: 600, color: 'var(--text-h)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.title}</p>
+                      {task.tags.length > 0 && (
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                          {task.tags.map(t => (
+                            <span key={t} className="tag">{t}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </section>
+
+        {/* 3 stats in one section */}
+        <section className="card" style={{ padding: 14 }}>
+          <h2 className="card-title" style={{ marginBottom: 14 }}>Today & This Week</h2>
+          <div className="stats-row stats-col" >
+
+            <div className="stat-card" style={{ minHeight: 110 }}>
+              <p className="stat-label">Habits</p>
+              <p className="stat-value">{todayLogs.length}/{habits.length}</p>
+              <p className="stat-sub">done today</p>
+            </div>
+            <div className="stat-card" style={{ minHeight: 110 }}>
+              <p className="stat-label">Journal</p>
+              <p className="stat-value">{todayJournal ? '✍️' : '—'}</p>
+              <p className="stat-sub" style={{ color: todayJournal ? '#22c55e' : undefined }}>
+                {todayJournal ? 'written today' : 'not written'}
+              </p>
+            </div>
+            <div className="stat-card" style={{ gridColumn: 'span 2', minHeight: 110 }}>
+              <p className="stat-label">Workouts</p>
+              <p className="stat-value">{weekWorkouts.length}/{weeklyTarget}</p>
+              <p className="stat-sub">this week</p>
+            </div>
+          </div>
+        </section>
       </div>
+
+    
 
       <section className="card">
         <h2 className="card-title">Today's Activities</h2>
@@ -668,6 +1023,131 @@ export default function Dashboard() {
           </>
         )}
       </section>
+
+
+        {/* Eisenhower Matrix at the bottom (same layout/logic as Tasks page) */}
+      <div
+        style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}
+        className="tasks-eisenhower-grid tasks-eisenhower-desktop only-desktop"
+      >
+        <div style={{ flex: 1, background: `var(--danger-bg)`, border: `1px solid var(--danger-border)`, borderRadius: 8, padding: 16, minHeight: 200 }}>
+          <h3 style={{ margin: '0 0 12px 0', color: `var(--danger)`, fontSize: 14, fontWeight: 600 }}>🔴 Do First (Urgent & Important)</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {urgent_important.length === 0 ? <p style={{ margin: 0, color: 'var(--text-dim)', fontSize: 12 }}>No tasks</p> : urgent_important.map(task => (
+              <div key={task.id} style={{ background: 'var(--card-bg)', border: `2px solid ${task.id === null ? 'var(--accent)' : 'var(--card-border)'}`, borderRadius: 8, padding: 12, cursor: 'pointer', boxShadow: 'none', transition: 'all 0.2s' }} className="hover:opacity-80" onClick={() => navigate('/tasks?taskId=' + task.id)}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ margin: '0 0 4px 0', fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{task.title}</p>
+                    {task.description && <p style={{ margin: '0 0 8px 0', fontSize: 12, color: 'var(--text-dim)' }}>{task.description}</p>}
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+                      {task.tags?.map(tag => (
+                        <span key={tag} style={{ fontSize: 11, padding: '2px 6px', background: 'var(--accent-bg)', borderRadius: 4, color: 'var(--accent)' }}>{tag}</span>
+                      ))}
+                    </div>
+                    {task.dueDate && <p style={{ margin: 0, fontSize: 11, color: 'var(--text-dim)' }}>Due: {new Date(task.dueDate).toLocaleDateString()}</p>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); toggleTaskDone(task) }} title="Mark complete" style={{ fontSize: 14 }}>✓</button>
+                    <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); openEditTaskModalFromDashboard(task) }} title="Edit" style={{ fontSize: 14 }}>✎</button>
+                    <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); archiveTaskFromDashboard(task) }} title="Archive" style={{ fontSize: 14 }}>🗃</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ flex: 1, background: `var(--warning-bg)`, border: `1px solid var(--warning-border)`, borderRadius: 8, padding: 16, minHeight: 200 }}>
+          <h3 style={{ margin: '0 0 12px 0', color: `var(--warning)`, fontSize: 14, fontWeight: 600 }}>🟠 Schedule (Important, Not Urgent)</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {not_urgent_important.length === 0 ? <p style={{ margin: 0, color: 'var(--text-dim)', fontSize: 12 }}>No tasks</p> : not_urgent_important.map(task => (
+              <div key={task.id} style={{ background: 'var(--card-bg)', border: `2px solid var(--card-border)`, borderRadius: 8, padding: 12, cursor: 'pointer', boxShadow: 'none', transition: 'all 0.2s' }} className="hover:opacity-80" onClick={() => navigate('/tasks?taskId=' + task.id)}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ margin: '0 0 4px 0', fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{task.title}</p>
+                    {task.description && <p style={{ margin: '0 0 8px 0', fontSize: 12, color: 'var(--text-dim)' }}>{task.description}</p>}
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+                      {task.tags?.map(tag => (
+                        <span key={tag} style={{ fontSize: 11, padding: '2px 6px', background: 'var(--accent-bg)', borderRadius: 4, color: 'var(--accent)' }}>{tag}</span>
+                      ))}
+                    </div>
+                    {task.dueDate && <p style={{ margin: 0, fontSize: 11, color: 'var(--text-dim)' }}>Due: {new Date(task.dueDate).toLocaleDateString()}</p>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); toggleTaskDone(task) }} title="Mark complete" style={{ fontSize: 14 }}>✓</button>
+                    <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); openEditTaskModalFromDashboard(task) }} title="Edit" style={{ fontSize: 14 }}>✎</button>
+                    <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); archiveTaskFromDashboard(task) }} title="Archive" style={{ fontSize: 14 }}>🗃</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ flex: 1, background: `var(--info-bg)`, border: `1px solid var(--info-border)`, borderRadius: 8, padding: 16, minHeight: 200 }}>
+          <h3 style={{ margin: '0 0 12px 0', color: `var(--info)`, fontSize: 14, fontWeight: 600 }}>🟡 Delegate (Urgent, Not Important)</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {urgent_not_important.length === 0 ? <p style={{ margin: 0, color: 'var(--text-dim)', fontSize: 12 }}>No tasks</p> : urgent_not_important.map(task => (
+              <div key={task.id} style={{ background: 'var(--card-bg)', border: `2px solid var(--card-border)`, borderRadius: 8, padding: 12, cursor: 'pointer', boxShadow: 'none', transition: 'all 0.2s' }} className="hover:opacity-80" onClick={() => navigate('/tasks?taskId=' + task.id)}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ margin: '0 0 4px 0', fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{task.title}</p>
+                    {task.description && <p style={{ margin: '0 0 8px 0', fontSize: 12, color: 'var(--text-dim)' }}>{task.description}</p>}
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+                      {task.tags?.map(tag => (
+                        <span key={tag} style={{ fontSize: 11, padding: '2px 6px', background: 'var(--accent-bg)', borderRadius: 4, color: 'var(--accent)' }}>{tag}</span>
+                      ))}
+                    </div>
+                    {task.dueDate && <p style={{ margin: 0, fontSize: 11, color: 'var(--text-dim)' }}>Due: {new Date(task.dueDate).toLocaleDateString()}</p>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); toggleTaskDone(task) }} title="Mark complete" style={{ fontSize: 14 }}>✓</button>
+                    <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); openEditTaskModalFromDashboard(task) }} title="Edit" style={{ fontSize: 14 }}>✎</button>
+                    <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); archiveTaskFromDashboard(task) }} title="Archive" style={{ fontSize: 14 }}>🗃</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ flex: 1, background: `var(--ghost-bg)`, border: `1px solid var(--ghost-border)`, borderRadius: 8, padding: 16, minHeight: 200 }}>
+          <h3 style={{ margin: '0 0 12px 0', color: `var(--ghost)`, fontSize: 14, fontWeight: 600 }}>⚪ Eliminate (Neither)</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {not_urgent_not_important.length === 0 ? <p style={{ margin: 0, color: 'var(--text-dim)', fontSize: 12 }}>No tasks</p> : not_urgent_not_important.map(task => (
+              <div key={task.id} style={{ background: 'var(--card-bg)', border: `2px solid var(--card-border)`, borderRadius: 8, padding: 12, cursor: 'pointer', boxShadow: 'none', transition: 'all 0.2s' }} className="hover:opacity-80" onClick={() => navigate('/tasks?taskId=' + task.id)}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ margin: '0 0 4px 0', fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{task.title}</p>
+                    {task.description && <p style={{ margin: '0 0 8px 0', fontSize: 12, color: 'var(--text-dim)' }}>{task.description}</p>}
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+                      {task.tags?.map(tag => (
+                        <span key={tag} style={{ fontSize: 11, padding: '2px 6px', background: 'var(--accent-bg)', borderRadius: 4, color: 'var(--accent)' }}>{tag}</span>
+                      ))}
+                    </div>
+                    {task.dueDate && <p style={{ margin: 0, fontSize: 11, color: 'var(--text-dim)' }}>Due: {new Date(task.dueDate).toLocaleDateString()}</p>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); toggleTaskDone(task) }} title="Mark complete" style={{ fontSize: 14 }}>✓</button>
+                    <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); openEditTaskModalFromDashboard(task) }} title="Edit" style={{ fontSize: 14 }}>✎</button>
+                    <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); archiveTaskFromDashboard(task) }} title="Archive" style={{ fontSize: 14 }}>🗃</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Mobile (single column) */}
+      <div className="only-mobile" style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
+        <TasksMobileQuadrant title="🔴 Do First (Urgent & Important)" tasks={urgent_important} color="danger" selectedTaskId={null} onSelectTask={(taskId) => navigate('/tasks?taskId=' + taskId)} onComplete={(task) => toggleTaskDone(task)} onEdit={(task) => { setEditingTask(task); openEditTaskModalFromDashboard(task) }} onArchive={(task) => archiveTaskFromDashboard(task)} />
+        <TasksMobileQuadrant title="🟠 Schedule (Important, Not Urgent)" tasks={not_urgent_important} color="warning" selectedTaskId={null} onSelectTask={(taskId) => navigate('/tasks?taskId=' + taskId)} onComplete={(task) => toggleTaskDone(task)} onEdit={(task) => { setEditingTask(task); openEditTaskModalFromDashboard(task) }} onArchive={(task) => archiveTaskFromDashboard(task)} />
+        <TasksMobileQuadrant title="🟡 Delegate (Urgent, Not Important)" tasks={urgent_not_important} color="info" selectedTaskId={null} onSelectTask={(taskId) => navigate('/tasks?taskId=' + taskId)} onComplete={(task) => toggleTaskDone(task)} onEdit={(task) => { setEditingTask(task); openEditTaskModalFromDashboard(task) }} onArchive={(task) => archiveTaskFromDashboard(task)} />
+        <TasksMobileQuadrant title="⚪ Eliminate (Neither)" tasks={not_urgent_not_important} color="ghost" selectedTaskId={null} onSelectTask={(taskId) => navigate('/tasks?taskId=' + taskId)} onComplete={(task) => toggleTaskDone(task)} onEdit={(task) => { setEditingTask(task); openEditTaskModalFromDashboard(task) }} onArchive={(task) => archiveTaskFromDashboard(task)} />
+      </div>
+
+
     </div>
   )
 }

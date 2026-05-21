@@ -76,17 +76,12 @@ export default function TasksMobileQuadrant(props: {
                       </p>
                     )}
 
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 4 }}>
                       {task.tags?.map(tag => (
                         <span
                           key={tag}
-                          style={{
-                            fontSize: 11,
-                            padding: '2px 6px',
-                            background: 'var(--accent-bg)',
-                            borderRadius: 4,
-                            color: 'var(--accent)',
-                          }}
+                          className="tag"
+                          style={{ fontSize: 11 }}
                         >
                           {tag}
                         </span>

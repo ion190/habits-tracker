@@ -9,7 +9,7 @@ export async function populateSampleData() {
   await db.transaction('rw', [
     db.habits, db.habitLogs, db.tasks, db.exercises,
     db.workoutPlans, db.completedWorkouts,
-    db.workSessionCategories, db.completedWorkSessions
+    db.completedWorkSessions
   ], async () => {
     await db.habits.clear()
     await db.habitLogs.clear()
@@ -17,16 +17,8 @@ export async function populateSampleData() {
     await db.exercises.clear()
     await db.workoutPlans.clear()
     await db.completedWorkouts.clear()
-    await db.workSessionCategories.clear()
     await db.completedWorkSessions.clear()
   })
-
-  const categories = [
-    { id: generateId(), name: 'Work',       color: '#ef4444', icon: '💻', createdAt: new Date().toISOString() },
-    { id: generateId(), name: 'Meditation', color: '#22c55e', icon: '🧘', createdAt: new Date().toISOString() },
-    { id: generateId(), name: 'Reading',    color: '#3b82f6', icon: '📖', createdAt: new Date().toISOString() },
-  ]
-  await Promise.all(categories.map(cat => sync.put('workSessionCategories', cat as unknown as Record<string, unknown>)))
 
   const habits: Habit[] = [
     { id: generateId(), name: 'Meditate',     color: '#22c55e', icon: '🧘', frequency: 'daily',  targetDays: [0,1,2,3,4,5,6], tags: ['health','mindfulness'], quota: undefined,                                      createdAt: new Date(Date.now() - 100*864e5).toISOString() },

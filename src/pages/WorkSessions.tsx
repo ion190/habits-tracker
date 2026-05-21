@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import type { WorkSessionCategory, CompletedWorkSession } from '../db/database'
+import type { CompletedWorkSession } from '../db/database'
 import { db } from '../db/database'
 import { sync } from '../db/sync'
 import { formatDuration, formatDateGMT3 } from '../utils'
@@ -43,7 +43,7 @@ function SessionDetailModal({ session, onClose, onDeleted }: {
   }
 
   return (
-    <Modal title={`${session.categoryName} session`} onClose={onClose} width={600}>
+    <Modal title="Session Details" onClose={onClose} width={600}>
       {/* Stats row */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
         <ProductivityCircle pct={session.productivityPct} />
@@ -80,14 +80,7 @@ function SessionDetailModal({ session, onClose, onDeleted }: {
               <h4 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Tags ({session.tags.length})</h4>
               <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 12 }}>
                 {session.tags.map(tag => (
-                  <span key={tag} style={{ 
-                    fontSize: 11, 
-                    padding: '4px 8px', 
-                    background: 'var(--accent-bg)', 
-                    color: 'var(--accent)',
-                    borderRadius: 6,
-                    border: '1px solid var(--accent-border)'
-                  }}>
+                  <span key={tag} className="tag" style={{ fontSize: 11 }}>
                     {tag}
                   </span>
                 ))}
@@ -103,7 +96,7 @@ function SessionDetailModal({ session, onClose, onDeleted }: {
                 {task.tags.length > 0 && (
                   <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
                     {task.tags.map(tag => (
-                      <span key={tag} style={{ fontSize: 11, padding: '2px 6px', background: 'var(--accent-bg)', borderRadius: 4 }}>{tag}</span>
+                      <span key={tag} className="tag" style={{ fontSize: 11 }}>{tag}</span>
                     ))}
                   </div>
                 )}
@@ -152,15 +145,17 @@ function SessionRow({ session, onDetail }: {
     <li>
       <div className="item-row" style={{ cursor: 'pointer' }} onClick={onDetail}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-            <span className="habit-dot" style={{ backgroundColor: session.categoryColor }} />
-<p className="item-name">{session.categoryName ?? 'Unknown'}</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
+            <p className="item-name">Work Session</p>
             <span className="item-sub">{formatDuration(session.actualDurationSeconds)}</span>
           </div>
           <p className="item-sub">
             {formatDateGMT3(session.startedAt, { dateOnly: true })}
             {' · '}{Math.round(session.productivityPct)}% productivity
             {' · '}{session.tasks.length} task{session.tasks.length !== 1 ? 's' : ''}
+            {session.tags && session.tags.length > 0 && (
+              <span>{' · '}{session.tags.slice(0, 2).join(', ')}{session.tags.length > 2 ? '…' : ''}</span>
+            )}
           </p>
         </div>
         <ProductivityCircle pct={session.productivityPct} />
@@ -198,7 +193,7 @@ function isValidSession(s: CompletedWorkSession): boolean {
   return true
 }
 
-function filterSessions(sessions: CompletedWorkSession[], filter: TimeFilter, selectedCategoryIds: string[]): CompletedWorkSession[] {
+function filterSessions(sessions: CompletedWorkSession[], filter: TimeFilter, selectedTags: string[]): CompletedWorkSession[] {
   // First filter by validity (exclude corrupted data like NaN/Infinity)
   let filtered = sessions.filter(s => isValidSession(s))
   
@@ -210,8 +205,13 @@ function filterSessions(sessions: CompletedWorkSession[], filter: TimeFilter, se
     return true
   })
   
-  // Then apply category and time filters
-  filtered = filtered.filter(s => selectedCategoryIds.length === 0 || selectedCategoryIds.includes(s.categoryId))
+  // Then apply tag and time filters
+  if (selectedTags.length > 0) {
+    filtered = filtered.filter(s => {
+      // Session matches if it has any of the selected tags
+      return s.tags && s.tags.some(tag => selectedTags.includes(tag))
+    })
+  }
 
   const days: Record<TimeFilter, number> = { today: 1, week: 7, month: 30, '3months': 90, year: 365, all: Infinity }
   const cutoff = new Date()
@@ -221,30 +221,22 @@ function filterSessions(sessions: CompletedWorkSession[], filter: TimeFilter, se
 }
 
 export default function WorkSessions() {
-  const [categories, setCategories] = useState<WorkSessionCategory[]>([])
   const [sessions, setSessions] = useState<CompletedWorkSession[]>([])
   const [loading, setLoading] = useState(true)
   const [showActive, setShowActive] = useState(false)
   const [showStartModal, setShowStartModal] = useState(false)
-  // const [showTimeModal, setShowTimeModal] = useState(false)
-  // const [showEndModal, setShowEndModal] = useState(false)
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('week')
-  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([])
+  const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [searchTerm, setSearchTerm] = useState('')
 
   const [detailSession, setDetailSession] = useState<CompletedWorkSession | null>(null)
 
   async function reload() {
     try {
-      const [cats, sess] = await Promise.all([
-        db.workSessionCategories.orderBy('name').toArray(),
-        db.completedWorkSessions.toArray().then(s => s.sort((a, b) => 
-          new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
-        )),
-      ])
-      setCategories(cats)
+      const sess = await db.completedWorkSessions.toArray().then(s => s.sort((a, b) => 
+        new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
+      ))
       setSessions(sess)
-
       setLoading(false)
     } catch (err) {
       setLoading(false)
@@ -289,26 +281,29 @@ export default function WorkSessions() {
   }, [])
 
 
-  const filteredSessionsForList = useMemo(() =>
-    filterSessions(sessions, timeFilter, selectedCategoryIds)
-      .filter(s => s.categoryName?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false),
-    [sessions, timeFilter, selectedCategoryIds, searchTerm]
-  )
+  const filteredSessionsForList = useMemo(() => {
+    const filtered = filterSessions(sessions, timeFilter, selectedTags)
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase()
+      return filtered.filter(s => 
+        (s.tags && s.tags.some(tag => tag.toLowerCase().includes(term))) ||
+        (s.notes && s.notes.toLowerCase().includes(term)) ||
+        (s.tasks && s.tasks.some(task => task.title.toLowerCase().includes(term)))
+      )
+    }
+    return filtered
+  }, [sessions, timeFilter, selectedTags, searchTerm])
 
-
-
-  const allCategories = useMemo(() => {
-    const predefined = categories
-    const custom = Array.from(new Set(sessions.map(s => s.categoryId))).map(id => {
-      const session = sessions.find(s => s.categoryId === id)
-      return session && session.categoryName ? {
-        id: session.categoryId,
-        name: session.categoryName,
-        color: session.categoryColor,
-      } : null
-    }).filter(Boolean) as any[]
-    return [...predefined, ...custom]
-  }, [categories, sessions])
+  // Get all unique tags from sessions
+  const allTags = useMemo(() => {
+    const tagSet = new Set<string>()
+    sessions.forEach(s => {
+      if (s.tags) {
+        s.tags.forEach(tag => tagSet.add(tag))
+      }
+    })
+    return Array.from(tagSet).sort()
+  }, [sessions])
 
   // derived metrics (intentionally unused for now; keep for future UI)
   // const filteredSessions = filterSessions(sessions, timeFilter, selectedCategoryIds)
@@ -353,42 +348,42 @@ export default function WorkSessions() {
         </select>
         <input className="field" placeholder="Search sessions..." value={searchTerm}
           onChange={e => setSearchTerm(e.target.value)} style={{ flex: 1, minWidth: 200 }} />
-        <button className="btn btn-ghost" onClick={() => { setTimeFilter('week'); setSelectedCategoryIds([]); setSearchTerm('') }}>Reset</button>
+        <button className="btn btn-ghost" onClick={() => { setTimeFilter('week'); setSelectedTags([]); setSearchTerm('') }}>Reset</button>
       </div>
 
-      {/* Category Tags Row */}
+      {/* Tag Filter Row */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, padding: 8, marginBottom: 16, overflowX: 'auto' }}>
-        Categories ({selectedCategoryIds.length}): 
-        {allCategories.map(cat => (
+        Tags ({selectedTags.length}): 
+        {allTags.map(tag => (
           <button
-            key={cat.id}
+            key={tag}
             className="btn btn-ghost"
             style={{
               padding: '4px 8px',
               fontSize: 12,
-              background: selectedCategoryIds.includes(cat.id) ? cat.color + '20' : 'var(--bg)',
-              borderColor: selectedCategoryIds.includes(cat.id) ? cat.color : 'var(--border)',
-              color: selectedCategoryIds.includes(cat.id) ? cat.color : 'var(--text)',
+              background: selectedTags.includes(tag) ? 'var(--accent)' + '20' : 'var(--bg)',
+              borderColor: selectedTags.includes(tag) ? 'var(--accent)' : 'var(--border)',
+              color: selectedTags.includes(tag) ? 'var(--accent)' : 'var(--text)',
               flexShrink: 0,
             }}
             onClick={() => {
-              setSelectedCategoryIds(prev =>
-                prev.includes(cat.id)
-                  ? prev.filter(id => id !== cat.id)
-                  : [...prev, cat.id]
+              setSelectedTags(prev =>
+                prev.includes(tag)
+                  ? prev.filter(t => t !== tag)
+                  : [...prev, tag]
               )
             }}
           >
-            {cat.name}
+            {tag}
           </button>
         ))}
-        {selectedCategoryIds.length > 0 && (
+        {selectedTags.length > 0 && (
           <button
             className="btn btn-ghost"
             style={{ fontSize: 12, flexShrink: 0 }}
-            onClick={() => setSelectedCategoryIds([])}
+            onClick={() => setSelectedTags([])}
           >
-            × Clear categories
+            × Clear tags
           </button>
         )}
       </div>
