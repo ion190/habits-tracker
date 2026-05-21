@@ -1369,11 +1369,31 @@ select.field {
   gap: 12px;
 }
 
-/* Ensure the 3 stat cards in “Today & This Week” wrap into multiple rows
-.stats-col {
-  display: grid;
-  grid-template-columns: 1fr !important;
-} */
+/* All three top-row cards share the same max-height;
+   the tasks list inside is the only part that scrolls. */
+.dashboard-top-grid > .card {
+  display: flex;
+  flex-direction: column;
+  max-height: 420px;
+}
+
+/* The scrollable task list sits inside the Tasks card.
+   flex: 1 + min-height: 0 lets it shrink and scroll within the capped card height. */
+.dashboard-tasks-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* The stats grid inside "Today & This Week" — same treatment. */
+.dashboard-top-grid > .card .stats-row {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  align-content: start;  /* keeps stat cards from stretching to fill empty space */
+}
 
 /* Give the top 3 cards a consistent fixed height on desktop so they stay aligned from the top */
 .dashboard-top-card {
@@ -1392,9 +1412,9 @@ select.field {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  /* .dashboard-top-card {
-    height: 360px;
-  } */
+  .dashboard-top-grid > .card {
+    max-height: 400px;
+  }
 
   .dashboard-top-card__inner {
     flex: 1;

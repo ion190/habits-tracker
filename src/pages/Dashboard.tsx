@@ -652,6 +652,7 @@ export default function Dashboard() {
           </div>
 
             <div
+            className="dashboard-tasks-list"
               style={{
                 display: 'flex',
                 flexDirection: 'column',
