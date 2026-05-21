@@ -1369,11 +1369,11 @@ select.field {
   gap: 12px;
 }
 
-Ensure the 3 stat cards in “Today & This Week” wrap into multiple rows
+/* Ensure the 3 stat cards in “Today & This Week” wrap into multiple rows
 .stats-col {
   display: grid;
   grid-template-columns: 1fr !important;
-}
+} */
 
 /* Give the top 3 cards a consistent fixed height on desktop so they stay aligned from the top */
 .dashboard-top-card {
