@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { db, generateId } from '../db/database'
 import type { CalendarActivity, CalendarActivityRecurrence, Task, JournalEntry } from '../db/database'
 import { sync } from '../db/sync'
+import { generateRecurrenceDates } from '../utils/recurrence'
 
 // ── Helpers ───────────────────────────────────────────────
 function toDateKey(d: Date) {
@@ -23,71 +24,7 @@ function fmtTime(t: string) {
   return t.padStart(5, '0')
 }
 
-// Generate all dates for a recurring activity
-function generateRecurrenceDates(
-  startDate: string,
-  recurrence: CalendarActivityRecurrence,
-  maxDays: number = 365
-): string[] {
-  const start = new Date(startDate + 'T00:00:00')
-  const pattern = recurrence.pattern
-  const endDate = recurrence.endDate ? new Date(recurrence.endDate + 'T00:00:00') : null
-
-  // For weekly/custom patterns, only include startDate if its day of week is in targetDays
-  const startDayOfWeek = start.getDay()
-  const startDateQualifies =
-    pattern === 'weekly' || pattern === 'custom'
-      ? (recurrence.targetDays?.includes(startDayOfWeek) ?? false)
-      : true
-
-  const dates: string[] = startDateQualifies ? [startDate] : []
-
-  let current = new Date(start) // eslint-disable-line prefer-const
-  let dayCount = 0
-
-  while (dayCount < maxDays) {
-    current.setDate(current.getDate() + 1)
-    dayCount++
-
-    if (endDate && current > endDate) break
-
-    const dateKey = toDateKey(current)
-    const dayOfWeek = current.getDay() // 0=Sun, 1=Mon, ..., 6=Sat (matches database schema)
-
-    switch (pattern) {
-      case 'daily':
-        dates.push(dateKey)
-        break
-      case 'weekly':
-        if (recurrence.targetDays?.includes(dayOfWeek)) {
-          dates.push(dateKey)
-        }
-        break
-      case 'monthly':
-        if (current.getDate() === start.getDate()) {
-          dates.push(dateKey)
-        }
-        break
-      case 'quarterly':
-        if (current.getMonth() % 3 === start.getMonth() % 3 && current.getDate() === start.getDate()) {
-          dates.push(dateKey)
-        }
-        break
-      case 'yearly':
-        if (current.getMonth() === start.getMonth() && current.getDate() === start.getDate()) {
-          dates.push(dateKey)
-        }
-        break
-      case 'custom':
-        if (recurrence.targetDays?.includes(dayOfWeek)) {
-          dates.push(dateKey)
-        }
-        break
-    }
-  }
-
-  return dates
-}
+// generateRecurrenceDates is now imported from '../utils/recurrence'
 
 // Check if two time ranges overlap
 function timesOverlap(start1: string, end1: string, start2: string, end2: string): boolean {
@@ -128,7 +65,9 @@ function splitActivity(
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
 const SLOT_H = 56   // px per hour
+const TASK_SLOT_H = 28 // px per task bar in all-day strip
 const COLORS = ['#aa3bff', '#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#f97316']
+const TASK_COLORS = ['#a855f7', '#7c3aed', '#6366f1', '#8b5cf6']
 
 // ── Mini month calendar ────────────────────────────────────
 function MiniCalendar({ selected, onChange, isMobile }: { selected: string; onChange: (d: string) => void; isMobile: boolean }) {
@@ -1115,31 +1054,35 @@ export default function CalendarPage() {
       {/* Calendar grid */}
       <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {/* Day header */}
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 10 }}>
-          <button className="btn btn-ghost" style={{ padding: '4px 10px' }}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, minHeight: 32 }}>
+          <button className="btn btn-ghost" style={{ padding: '2px 6px', fontSize: 13, minWidth: 0, height: 24 }}
             onClick={() => {
               const d = new Date(selectedDate + 'T00:00:00')
               d.setDate(d.getDate() - 1)
               setSelectedDate(toDateKey(d))
             }}>←</button>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
+          <h2 style={{ margin: 0, fontSize: 14, fontWeight: 600, lineHeight: 1.2, flexShrink: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', {
-              weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+              weekday: 'short', month: 'short', day: 'numeric', year: '2-digit',
             })}
           </h2>
-          <button className="btn btn-ghost" style={{ padding: '4px 10px' }}
+          <button className="btn btn-ghost" style={{ padding: '2px 6px', fontSize: 13, minWidth: 0, height: 24 }}
             onClick={() => {
               const d = new Date(selectedDate + 'T00:00:00')
               d.setDate(d.getDate() + 1)
               setSelectedDate(toDateKey(d))
             }}>→</button>
           {selectedDate !== toDateKey(new Date()) && (
-            <button className="btn btn-secondary" style={{ fontSize: 12 }}
+            <button className="btn btn-secondary" style={{ fontSize: 11, padding: '2px 8px', height: 24 }}
               onClick={() => setSelectedDate(toDateKey(new Date()))}>Today</button>
           )}
-          <span style={{ marginLeft: 'auto', fontSize: 12, opacity: 0.5 }}>
-            {activities.length} activit{activities.length !== 1 ? 'ies' : 'y'}
+          <span style={{ marginLeft: 'auto', fontSize: 10, opacity: 0.5, minWidth: 40, textAlign: 'right' }}>
+            {activities.length + todayTasks.length} item{activities.length + todayTasks.length !== 1 ? 's' : ''}
           </span>
+          <button className="btn btn-primary" style={{ fontSize: 12, padding: '2px 8px', height: 28, marginLeft: 6 }}
+            onClick={() => { setEditActivity(undefined); setShowForm(true) }}>
+            +
+          </button>
         </div>
 
         {/* Scrollable time grid */}
@@ -1234,6 +1177,109 @@ export default function CalendarPage() {
                 pointerEvents: 'none',
               }} />
             ))}
+
+            {/* All-day task strip */}
+            {todayTasks.filter(t => !t.notificationTime).length > 0 && (
+              <div style={{
+                position: 'absolute', left: 44, right: 0, top: 0,
+                height: 0, overflow: 'visible',
+                zIndex: 5,
+              }}>
+                <div style={{
+                  position: 'absolute', left: 0, right: 0, top: 0,
+                  height: todayTasks.filter(t => !t.notificationTime).length * TASK_SLOT_H + 4,
+                  background: 'var(--accent-bg)',
+                  borderBottom: '1px dashed var(--accent)',
+                  opacity: 0.4,
+                  pointerEvents: 'none',
+                }} />
+                {todayTasks.filter(t => !t.notificationTime).map((t, idx) => {
+                  const color = TASK_COLORS[idx % TASK_COLORS.length]
+                  return (
+                    <div
+                      key={t.id}
+                      onClick={e => {
+                        e.stopPropagation()
+                        setEditActivity({
+                          id: '', date: selectedDate, title: t.title,
+                          startTime: '09:00', endTime: '10:00', color: color,
+                          recurrence: undefined, notes: '', category: '',
+                          createdAt: new Date().toISOString(),
+                        })
+                        setShowForm(true)
+                      }}
+                      style={{
+                        position: 'absolute',
+                        left: 4, right: 4,
+                        top: idx * TASK_SLOT_H + 2,
+                        height: TASK_SLOT_H - 4,
+                        background: color,
+                        borderRadius: 6,
+                        padding: '0 8px',
+                        display: 'flex', alignItems: 'center',
+                        cursor: 'pointer',
+                        overflow: 'hidden',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                      }}
+                      title={`${t.title}${t.completedAt ? ' ✓' : ''}`}
+                    >
+                      <span style={{
+                        fontSize: 11, fontWeight: 600, color: '#fff',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>
+                        {t.completedAt && <span style={{ opacity: 0.7, marginRight: 4 }}>✓</span>}
+                        {t.title}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Timed tasks (with notificationTime) */}
+            {todayTasks.filter(t => t.notificationTime).map((t, idx) => {
+              const min = timeToMinutes(t.notificationTime!)
+              const color = TASK_COLORS[idx % TASK_COLORS.length]
+              return (
+                <div
+                  key={t.id}
+                  onClick={e => {
+                    e.stopPropagation()
+                    setEditActivity({
+                      id: '', date: selectedDate, title: t.title,
+                      startTime: '09:00', endTime: '10:00', color: color,
+                      recurrence: undefined, notes: '', category: '',
+                      createdAt: new Date().toISOString(),
+                    })
+                    setShowForm(true)
+                  }}
+                  style={{
+                    position: 'absolute', left: 52, right: 8,
+                    top: (min / 60) * SLOT_H + 2,
+                    height: 22,
+                    background: color + 'cc',
+                    borderLeft: `3px solid ${color}`,
+                    borderRadius: 8, padding: '2px 8px',
+                    display: 'flex', alignItems: 'center',
+                    cursor: 'pointer', overflow: 'hidden',
+                    boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
+                    zIndex: 8 + idx,
+                  }}
+                  title={`${t.title}${t.completedAt ? ' ✓' : ''}`}
+                >
+                  <span style={{
+                    fontSize: 11, fontWeight: 600, color: '#fff',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {t.completedAt && <span style={{ opacity: 0.7, marginRight: 4 }}>✓</span>}
+                    {t.title}
+                    <span style={{ opacity: 0.8, fontWeight: 400, marginLeft: 6, fontSize: 10 }}>
+                      {fmtTime(t.notificationTime!)}
+                    </span>
+                  </span>
+                </div>
+              )
+            })}
 
             {/* Selection rectangle */}
             {isSelecting && tempStartMin !== null && tempEndMin !== null && (

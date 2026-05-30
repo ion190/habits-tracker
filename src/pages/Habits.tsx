@@ -1,4 +1,25 @@
 import { useEffect, useState, useMemo } from 'react'
+// --- Habit sorting helpers ---
+const HABIT_SORT_KEY = 'habitsSortOrder'
+const HABIT_SORT_OPTIONS = [
+  { value: 'name', label: 'Name (A-Z)' },
+  { value: 'created', label: 'Created (Newest)' },
+  { value: 'color', label: 'Color' },
+  { value: 'frequency', label: 'Frequency' },
+]
+
+export function sortHabits(habits, sortOrder) {
+  if (sortOrder === 'name') {
+    return [...habits].sort((a, b) => a.name.localeCompare(b.name))
+  } else if (sortOrder === 'created') {
+    return [...habits].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
+  } else if (sortOrder === 'color') {
+    return [...habits].sort((a, b) => (a.color || '').localeCompare(b.color || ''))
+  } else if (sortOrder === 'frequency') {
+    return [...habits].sort((a, b) => (a.frequency || '').localeCompare(b.frequency || ''))
+  }
+  return habits
+}
 import { db, generateId } from '../db/database'
 import { sync } from '../db/sync'
 import type { Habit, HabitLog } from '../db/database'
@@ -314,6 +335,9 @@ export default function Habits() {
 
 
   const [habits,  setHabits]  = useState<Habit[]>([])
+  const [habitSort, setHabitSort] = useState(() => {
+    return localStorage.getItem(HABIT_SORT_KEY) || 'name'
+  })
 
 
   // Warn about missing tags during development
@@ -349,10 +373,11 @@ export default function Habits() {
   // }
 
   const displayedHabits = useMemo(() => {
-    return selectedTags.length === 0 
+    const filtered = selectedTags.length === 0 
       ? habits 
       : habits.filter(h => selectedTags.every(tag => getTags(h).includes(tag)))
-  }, [habits, selectedTags])
+    return sortHabits(filtered, habitSort)
+  }, [habits, selectedTags, habitSort])
 
   const filteredLogs = useMemo(() => {
     if (selectedTags.length === 0) return logs
@@ -471,6 +496,7 @@ export default function Habits() {
   const today     = toDateKey(new Date().toISOString())
   // const todayLogs = logs.filter(l => toDateKey(l.completedAt) === today)
 
+
   return (
     <div className="page">
       <div className="page-header">
@@ -478,8 +504,25 @@ export default function Habits() {
         <p className="page-sub">{logs.filter(l => toDateKey(l.completedAt) === today && displayedHabits.some(h => h.id === l.habitId)).length}/{displayedHabits.length} done today</p>
       </div>
 
-      <div className="section-header">
+      <div className="section-header" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <span />
+        <div style={{ flex: 1 }} />
+        <label style={{ fontSize: 13, color: 'var(--text-dim)', display: 'flex', alignItems: 'center', gap: 6 }}>
+          Sort:
+          <select
+            className="field"
+            style={{ fontSize: 13, padding: '4px 8px' }}
+            value={habitSort}
+            onChange={e => {
+              setHabitSort(e.target.value)
+              localStorage.setItem(HABIT_SORT_KEY, e.target.value)
+            }}
+          >
+            {HABIT_SORT_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </label>
         <button className="btn btn-primary" onClick={() => setModal('new')}>
           <IconPlus /> New habit
         </button>

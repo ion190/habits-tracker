@@ -64,9 +64,12 @@ export default function WorkoutTimer() {
   const timerText = `${hh}:${mm}:${ss}`
 
   return (
-    <div 
+    <div
       className="header-timer"
-      onClick={() => navigate('/workouts')}
+      onClick={() => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        navigate('/workouts');
+      }}
       title="Click to go to workouts (ActiveWorkout)"
     >
       {timerText}

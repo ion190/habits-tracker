@@ -1365,8 +1365,10 @@ select.field {
 /* Dashboard top row: Calendar + Tasks + Weekly Activities */
 .dashboard-top-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr); /* minmax(0,1fr) prevents grid blowout on mobile */
   gap: 12px;
+  width: 100%;
+  min-width: 0;
 }
 
 /* All three top-row cards share the same max-height;
@@ -1375,6 +1377,9 @@ select.field {
   display: flex;
   flex-direction: column;
   max-height: 420px;
+  min-width: 0;        /* prevent card from overflowing its grid column */
+  width: 100%;
+  overflow: hidden;
 }
 
 /* The scrollable task list sits inside the Tasks card.
@@ -1409,7 +1414,7 @@ select.field {
 
 @media (min-width: 768px) {
   .dashboard-top-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr)); /* already safe — minmax(0,1fr) */
   }
 
   .dashboard-top-grid > .card {

@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { db, generateId, dateKeyForPeriod } from '../db/database'
 import type { CalendarActivity, CompletedWorkSession, WorkSessionCategory, JournalEntry, Habit, HabitLog, CompletedWorkout, Task } from '../db/database'
+import { sortHabits } from './Habits'
+const HABIT_SORT_KEY = 'habitsSortOrder'
 import { formatDuration, toDateKey, startOfWeek, isTaskDueOnDate, getPastTags } from '../utils'
 
 import { sync } from '../db/sync'
@@ -270,6 +272,7 @@ function WorkoutRow({ w }: { w: CompletedWorkout }) {
 export default function Dashboard() {
   const navigate = useNavigate()
   const [habits, setHabits] = useState<Habit[]>([])
+  const [habitSort, setHabitSort] = useState(() => localStorage.getItem(HABIT_SORT_KEY) || 'name')
   const [logs, setLogs] = useState<HabitLog[]>([])
   const [workouts, setWorkouts] = useState<CompletedWorkout[]>([])
   const [allWorkouts, setAllWorkouts] = useState<CompletedWorkout[]>([])
@@ -393,6 +396,9 @@ export default function Dashboard() {
   useEffect(() => {
     load()
     loadTaskTags()
+    const onStorage = () => setHabitSort(localStorage.getItem(HABIT_SORT_KEY) || 'name')
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
   }, [load, loadTaskTags])
 
   // Focus task title input when modal opens
@@ -417,6 +423,7 @@ export default function Dashboard() {
 
   const today = toDateKey(new Date().toISOString())
   const todayLogs = logs.filter((l) => toDateKey(l.completedAt) === today)
+  const sortedHabits = sortHabits(habits, habitSort)
 
   const todaysTasks = tasks.filter((t) => {
     if (t.archivedAt) return false
