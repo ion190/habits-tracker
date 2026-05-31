@@ -1,8 +1,13 @@
 // src/utils/recurrence.ts
 import type { CalendarActivityRecurrence } from '../db/database'
 
-// Helper to convert Date to YYYY-MM-DD stringunction toDateKey(d: Date): string {
-  return d.toISOString().slice(0, 10)
+// Helper to convert Date to YYYY-MM-DD string using LOCAL time (not UTC).
+// toISOString() returns UTC which can shift the date by a day in non-UTC timezones.
+function toDateKey(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 // Generate all dates for a recurring activity
@@ -13,7 +18,7 @@ export function generateRecurrenceDates(
 ): string[] {
   const dates: string[] = []
   const start = new Date(startDate + 'T00:00:00')
-  let current = new Date(start)
+  const current = new Date(start)
   let count = 0
   const pattern = recurrence.pattern
   const endDate = recurrence.endDate ? new Date(recurrence.endDate + 'T00:00:00') : undefined

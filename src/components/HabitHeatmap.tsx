@@ -8,9 +8,21 @@ interface DayData {
   count: number
   habitNames: string[]
   habitColors: string[]
+  habitIds: string[]
 }
 
-function Tooltip({ day, x, y }: { day: DayData; x: number; y: number }) {
+
+function Tooltip({
+  day,
+  x,
+  y,
+  onToggle,
+}: {
+  day: DayData
+  x: number
+  y: number
+  onToggle?: (habitId: string, date: string) => void
+}) {
   const style: CSSProperties = {
     position: 'fixed', left: x + 12, top: y - 12, zIndex: 9999, pointerEvents: 'none',
   }
@@ -25,17 +37,31 @@ function Tooltip({ day, x, y }: { day: DayData; x: number; y: number }) {
           <p className="hm-tooltip-label">Habits completed ({day.count})</p>
           <div className="hm-tooltip-habits">
             {day.habitNames.slice(0, 5).map((name, i) => (
-              <span key={i} className="hm-tooltip-tag" style={{
-                background: day.habitColors[i] + '22',
-                borderColor: day.habitColors[i] + '55',
-                color: day.habitColors[i],
-              }}>
+              <button
+                key={i}
+                type="button"
+                className="hm-tooltip-tag"
+                style={{
+                  background: day.habitColors[i] + '22',
+                  borderColor: day.habitColors[i] + '55',
+                  color: day.habitColors[i],
+                  cursor: onToggle ? 'pointer' : 'default',
+                }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  // day.habitIds is aligned with habitNames/colors
+                  const habitId = day.habitIds?.[i]
+                  if (!habitId || !onToggle) return
+                  onToggle(habitId, day.date)
+                }}
+                aria-label={`Toggle completion for ${name} on ${day.date}`}
+              >
                 <span className="hm-tooltip-dot" style={{ background: day.habitColors[i] }} />
                 {name}
-              </span>
+              </button>
             ))}
             {day.habitNames.length > 5 && (
-              <span className="hm-tooltip-tag" style={{ background: 'var(--border)', color: 'var(--text)' }}>
+              <span className="hm-tooltip-tag" style={{ background: 'var(--border)', color: 'var(--text)', cursor: 'default' }}>
                 +{day.habitNames.length - 5} more
               </span>
             )}
@@ -60,9 +86,10 @@ interface Props {
   habits: Habit[]
   logs: HabitLog[]
   filterHabitIds?: string[]
+  onToggle?: (habitId: string, date: string) => void
 }
 
-export default function HabitHeatmap({ habits, logs, filterHabitIds }: Props) {
+export default function HabitHeatmap({ habits, logs, filterHabitIds, onToggle }: Props) {
   const [hovered, setHovered] = useState<DayData | null>(null)
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -86,17 +113,26 @@ export default function HabitHeatmap({ habits, logs, filterHabitIds }: Props) {
 
   const dayMap = useMemo(() => {
     const map = new Map<string, DayData>()
-    for (const key of days) map.set(key, { date: key, count: 0, habitNames: [], habitColors: [] })
+    for (const key of days) {
+      map.set(key, {
+        date: key,
+        count: 0,
+        habitNames: [],
+        habitColors: [],
+        habitIds: [],
+      })
+    }
 
     const filteredLogs = filterHabitIds ? logs.filter(l => filterHabitIds.includes(l.habitId)) : logs
 
     for (const log of filteredLogs) {
       const key = toDateKey(log.completedAt)
       const entry = map.get(key)
-      if (entry && !entry.habitColors.some(c => c === log.habitId)) {
+      if (entry && !entry.habitIds.includes(log.habitId)) {
         const habit = habits.find(h => h.id === log.habitId)
         if (habit) {
           entry.count++
+          entry.habitIds.push(log.habitId)
           entry.habitNames.push(habit.name)
           entry.habitColors.push(habit.color)
         }
@@ -192,7 +228,10 @@ export default function HabitHeatmap({ habits, logs, filterHabitIds }: Props) {
         ))}
       </div>
 
-      {hovered && <Tooltip day={hovered} x={mousePos.x} y={mousePos.y} />}
+      {hovered && (
+        <Tooltip day={hovered} x={mousePos.x} y={mousePos.y} onToggle={onToggle} />
+      )}
+
     </div>
   )
 }

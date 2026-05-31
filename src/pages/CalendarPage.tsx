@@ -35,33 +35,49 @@ function timesOverlap(start1: string, end1: string, start2: string, end2: string
   return s2 < e1 && e2 > s1
 }
 
-// Split an activity to make room for a new activity
-function splitActivity(
+// Subtract the new time range from an existing activity time range.
+// Treats both ranges as [start, end) (end is exclusive).
+// Returns 0..2 direct segments that remain after removing the overlap.
+function subtractTimeRange(
   existing: CalendarActivity,
   newActivity: CalendarActivity
 ): CalendarActivity[] {
+  const oldStart = existing.startTime
+  const oldEnd = existing.endTime
+  const newStart = newActivity.startTime
+  const newEnd = newActivity.endTime
+
   const result: CalendarActivity[] = []
 
-  // Part before the new activity
-  if (newActivity.startTime > existing.startTime) {
-    result.push({
-      ...existing,
-      id: generateId(),
-      endTime: newActivity.startTime,
-    })
+  // Left remaining segment: [oldStart, min(oldEnd, newStart))
+  if (oldStart < newStart) {
+    const leftEnd = newStart < oldEnd ? newStart : oldEnd
+    if (leftEnd > oldStart) {
+      result.push({
+        ...existing,
+        id: generateId(),
+        startTime: oldStart,
+        endTime: leftEnd,
+      })
+    }
   }
 
-  // Part after the new activity
-  if (newActivity.endTime < existing.endTime) {
-    result.push({
-      ...existing,
-      id: generateId(),
-      startTime: newActivity.endTime,
-    })
+  // Right remaining segment: [max(oldStart, newEnd), oldEnd)
+  if (newEnd < oldEnd) {
+    const rightStart = newEnd > oldStart ? newEnd : oldStart
+    if (oldEnd > rightStart) {
+      result.push({
+        ...existing,
+        id: generateId(),
+        startTime: rightStart,
+        endTime: oldEnd,
+      })
+    }
   }
 
   return result
 }
+
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
 const SLOT_H = 56   // px per hour
@@ -195,13 +211,14 @@ function MiniCalendar({ selected, onChange, isMobile }: { selected: string; onCh
 }
 
 // ── Activity form ─────────────────────────────────────────
-function ActivityForm({ date, activity, originalRecurringActivity, onSave, onCancel, onDelete }: {
+function ActivityForm({ date, activity, originalRecurringActivity, editingInstanceOfRecurring, onSave, onCancel, onDelete }: {
   date: string
   activity?: CalendarActivity
   originalRecurringActivity?: CalendarActivity
-  onSave: (a: CalendarActivity) => void
+  editingInstanceOfRecurring?: boolean
+  onSave: (a: CalendarActivity, scope: 'none' | 'instance' | 'forward' | 'series', originalRecurring?: CalendarActivity) => void
   onCancel: () => void
-  onDelete?: () => void
+  onDelete?: (scope?: 'instance') => void
 }) {
   const [title,     setTitle]     = useState(activity?.title ?? '')
   const [startTime, setStartTime] = useState(activity?.startTime ?? '09:00')
@@ -210,7 +227,9 @@ function ActivityForm({ date, activity, originalRecurringActivity, onSave, onCan
   const [notes,     setNotes]     = useState(activity?.notes ?? '')
   const [category,  setCategory]  = useState(activity?.category ?? '')
   
-  // Recurrence fields - for editing recurring activities, use the original activity's recurrence
+  // Recurrence fields
+  // - If editing a recurring series: use the original activity's recurrence
+  // - If editing an instance: do not force recurrence; we save it as a direct override (non-recurring)
   const isEditingRecurring = !!originalRecurringActivity
   const [recurrenceEnabled, setRecurrenceEnabled] = useState(isEditingRecurring || !!activity?.recurrence)
   const [recurrencePattern, setRecurrencePattern] = useState<'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'custom'>(
@@ -229,14 +248,36 @@ function ActivityForm({ date, activity, originalRecurringActivity, onSave, onCan
     )
   }
 
-  const save = () => {
+  const save = (scopeOverride?: 'instance' | 'forward' | 'series') => {
     if (!title.trim()) return
-    
-    // If editing a recurring activity, update the original recurring activity (not this date's instance)
-    const targetDate = isEditingRecurring && originalRecurringActivity ? originalRecurringActivity.date : date
-    
+
+    // scope: how broadly this save applies (only relevant when editing a recurring activity)
+    // - 'instance':  save only this occurrence (non-recurring override on this date)
+    // - 'forward':   truncate the series before this date, save a new series from this date forward
+    // - 'series':    update the series anchor in place (changes all occurrences)
+    // For new activities, scope is irrelevant — just save with recurrence if enabled.
+    const scope = scopeOverride ?? (isEditingRecurring ? 'series' : undefined)
+
+    const isNewActivity = !activity?.id
+
+    // For 'series' edits, anchor stays at original date. Otherwise, use current date.
+    const targetDate =
+      scope === 'series' && originalRecurringActivity
+        ? originalRecurringActivity.date
+        : date
+
+    // Recurrence is kept when: (a) enabled and (b) not saving a single-instance override
+    const shouldBeRecurring = recurrenceEnabled && scope !== 'instance'
+
     const a: CalendarActivity = {
-      id:        originalRecurringActivity?.id ?? activity?.id ?? generateId(),
+      // Instance overrides must always get a fresh id so they don't overwrite the series anchor.
+      // Series edits reuse the anchor id (upsert in place).
+      // New activities always get a fresh id.
+      id: scope === 'series' && originalRecurringActivity
+        ? originalRecurringActivity.id
+        : scope === 'instance'
+          ? generateId()
+          : (isNewActivity ? generateId() : (activity?.id ?? generateId())),
       title:     title.trim(),
       date:      targetDate,
       startTime,
@@ -245,13 +286,25 @@ function ActivityForm({ date, activity, originalRecurringActivity, onSave, onCan
       notes:     notes.trim() || undefined,
       category:  category.trim() || undefined,
       createdAt: originalRecurringActivity?.createdAt ?? activity?.createdAt ?? new Date().toISOString(),
-      recurrence: recurrenceEnabled ? {
+      recurrence: shouldBeRecurring ? {
         pattern: recurrencePattern,
         targetDays: recurrencePattern === 'weekly' || recurrencePattern === 'custom' ? recurrenceTargetDays : undefined,
         endDate: recurrenceEndDate || undefined,
       } : undefined,
     }
-    onSave(a)
+    onSave(a, scope ?? 'none', originalRecurringActivity)
+  }
+
+  // When editing a recurring activity, user can toggle "this occurrence only" inline.
+  const [instanceOnly, setInstanceOnly] = useState(false)
+
+  const handleSaveClick = () => {
+    if (!title.trim()) return
+    if (isEditingRecurring) {
+      save(instanceOnly ? 'instance' : 'series')
+    } else {
+      save()
+    }
   }
 
   // Days of week starting with Sunday (0=Sun)
@@ -309,9 +362,13 @@ function ActivityForm({ date, activity, originalRecurringActivity, onSave, onCan
         
         {isEditingRecurring && (
           <p style={{ fontSize: 11, opacity: 0.6, marginTop: 6, marginBottom: 0 }}>
-            📌 Editing recurring activity (changes apply to all instances)
+            {editingInstanceOfRecurring
+              ? '📌 Editing this occurrence only'
+              : '📌 Editing recurring series (changes apply to all instances)'}
+
           </p>
         )}
+
 
         {recurrenceEnabled && (
           <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -355,16 +412,56 @@ function ActivityForm({ date, activity, originalRecurringActivity, onSave, onCan
         )}
       </div>
 
+      {/* Occurrence-only toggle — shown when editing an existing recurring activity */}
+      {isEditingRecurring && (
+        <div style={{
+          borderTop: '1px solid var(--border)',
+          paddingTop: 12,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+        }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer', fontWeight: 500 }}>
+            <input
+              type="checkbox"
+              checked={instanceOnly}
+              onChange={e => setInstanceOnly(e.target.checked)}
+            />
+            Edit this occurrence only
+          </label>
+          {instanceOnly && (
+            <p style={{ fontSize: 11, opacity: 0.6, margin: 0 }}>
+              Only {date} will be changed. The rest of the series stays the same.
+            </p>
+          )}
+          {!instanceOnly && (
+            <p style={{ fontSize: 11, opacity: 0.6, margin: 0 }}>
+              Changes will apply to all occurrences in the series.
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="form-actions">
-        {(onDelete || isEditingRecurring) && (
+        {/* Delete button — always shown for existing activities */}
+        {onDelete && !instanceOnly && (
           <button className="btn btn-ghost" style={{ color: 'var(--danger)', marginRight: 'auto' }}
             onClick={onDelete}>
-            {isEditingRecurring ? '🛑 Stop recurring' : '🗑 Delete'}
+            🛑 Stop from here
           </button>
         )}
+        {onDelete && instanceOnly && (
+          <button className="btn btn-ghost" style={{ color: 'var(--danger)', marginRight: 'auto' }}
+            onClick={() => onDelete('instance')}>
+            🗑 Delete this occurrence
+          </button>
+        )}
+        {!onDelete && !isEditingRecurring && (
+          <span />
+        )}
         <button className="btn btn-ghost" onClick={onCancel}>Cancel</button>
-        <button className="btn btn-primary" onClick={save} disabled={!title.trim()}>
-          {activity ? 'Update' : 'Add Activity'}
+        <button className="btn btn-primary" onClick={handleSaveClick} disabled={!title.trim()}>
+          {activity?.id ? 'Update' : 'Add Activity'}
         </button>
       </div>
     </div>
@@ -454,6 +551,8 @@ export default function CalendarPage() {
   const [showForm,     setShowForm]             = useState(false)
   const [editActivity, setEditActivity]         = useState<CalendarActivity | undefined>()
   const [originalRecurringActivity, setOriginalRecurringActivity] = useState<CalendarActivity | undefined>() // Track original recurring activity
+  const [editingInstanceOfRecurring, setEditingInstanceOfRecurring] = useState(false)
+
   const [newStartTime, setNewStartTime]         = useState('09:00')
   const [newEndTime, setNewEndTime] = useState('10:00')
   const [showDayTip,   setShowDayTip]           = useState(false)
@@ -481,14 +580,29 @@ export default function CalendarPage() {
     const allActivities = await db.calendarActivities.toArray()
     const recurringActivities = allActivities.filter(a => a.recurrence && a.date !== selectedDate)
     
+    // Direct activities on this date (non-recurring overrides and standalone activities).
+    // We use their startTime to detect which series instances they override.
+    const directStartTimes = new Set(directActivities.filter(a => !a.recurrence).map(a => a.startTime))
+
     const applicableRecurring: CalendarActivity[] = []
     for (const activity of recurringActivities) {
       if (!activity.recurrence) continue
+
+      // Suppress if this date is in the series' skippedDates list.
+      const skippedDates: string[] = (activity as any).skippedDates ?? []
+      if (skippedDates.includes(selectedDate)) continue
+
       const dates = generateRecurrenceDates(activity.date, activity.recurrence)
       if (dates.includes(selectedDate)) {
-        // Keep the original activity as-is - don't modify the date!
-        // The date field should always be the anchor date for recurring activities
-        applicableRecurring.push(activity)
+        // Suppress if a direct override exists at the same start time on this date.
+        if (directStartTimes.has(activity.startTime)) continue
+
+        applicableRecurring.push({
+          ...activity,
+          date: selectedDate,
+          anchorDate: activity.date,
+          isRecurrenceInstance: true,
+        } as CalendarActivity & { anchorDate: string; isRecurrenceInstance: boolean })
       }
     }
     
@@ -525,108 +639,156 @@ export default function CalendarPage() {
     return () => clearTimeout(timeout)
   }, [])
 
-  const saveActivity = async (a: CalendarActivity) => {
+  const saveActivity = async (a: CalendarActivity, scope: 'none' | 'instance' | 'forward' | 'series' = 'none', originalRecurring?: CalendarActivity) => {
     const splitDetails: string[] = []
 
-    // If this is a recurring activity being saved, we need to use the original date
-    // and save it as a recurring activity (not create instances)
-    if (a.recurrence) {
-      // Recurring activity: just save it (check only on the main date if needed)
-      // Remove the old version if updating
-      const oldRecurring = await db.calendarActivities.get(a.id)
-      if (oldRecurring?.recurrence) {
-        await sync.delete('calendarActivities', a.id)
+    if (scope === 'series' || (scope === 'none' && a.recurrence)) {
+      // ── Update entire recurring series ───────────────────
+      // Delete old record if it exists, then re-save with new data.
+      const existing = await db.calendarActivities.get(a.id)
+      if (existing) await sync.delete('calendarActivities', a.id)
+      const rec = { ...a, id: a.id || generateId() }
+      await db.calendarActivities.put(rec)
+      await sync.put('calendarActivities', rec as unknown as Record<string, unknown>)
+
+    } else if (scope === 'forward' && originalRecurring) {
+      // ── Edit this and all future occurrences ─────────────
+      // 1. Truncate the original series: set its endDate to the day before `date`
+      const dayBefore = new Date(selectedDate + 'T00:00:00')
+      dayBefore.setDate(dayBefore.getDate() - 1)
+      const truncatedEndDate = toDateKey(dayBefore)
+
+      const truncatedSeries: CalendarActivity = {
+        ...originalRecurring,
+        recurrence: originalRecurring.recurrence
+          ? { ...originalRecurring.recurrence, endDate: truncatedEndDate }
+          : undefined,
+      }
+      await db.calendarActivities.put(truncatedSeries)
+      await sync.put('calendarActivities', truncatedSeries as unknown as Record<string, unknown>)
+
+      // 2. Save the new series starting from `date` (a already has date = selectedDate)
+      const forwardRec = { ...a, id: generateId() }
+      await db.calendarActivities.put(forwardRec)
+      await sync.put('calendarActivities', forwardRec as unknown as Record<string, unknown>)
+
+    } else {
+      // ── Direct (non-recurring) activity — scope 'none' or 'instance' ──
+
+      // For instance overrides: add this date to the series' skippedDates so the
+      // series instance is suppressed even if the override has a different startTime.
+      if (scope === 'instance' && originalRecurring) {
+        const series = await db.calendarActivities.get(originalRecurring.id)
+        if (series?.recurrence) {
+          const skippedDates: string[] = (series as any).skippedDates ?? []
+          if (!skippedDates.includes(a.date)) {
+            const updated = { ...series, skippedDates: [...skippedDates, a.date] }
+            await db.calendarActivities.put(updated as any)
+            await sync.put('calendarActivities', updated as unknown as Record<string, unknown>)
+          }
+        }
       }
 
-      // Save the recurring activity with its original date
-      const record = {
-        ...a,
-        id: a.id || generateId(),
-      }
-      await sync.put('calendarActivities', record as unknown as Record<string, unknown>)
-    } else {
-      // This is a direct activity on a specific date
       const dateKey = a.date
-      
+
       // Check for overlaps with direct activities on this date
       const directActivitiesOnDate = await db.calendarActivities
         .where('date').equals(dateKey)
         .filter(act => !act.recurrence)
         .toArray()
 
-      // Check for overlaps with recurring activity instances
+      // Check for overlaps with recurring activity instances on this date
       const allActivities = await db.calendarActivities.toArray()
       const recurringActivities = allActivities.filter(act => act.recurrence)
-      
+
       const recurringInstancesOnDate: CalendarActivity[] = []
       for (const recActivity of recurringActivities) {
         if (!recActivity.recurrence) continue
         const dates = generateRecurrenceDates(recActivity.date, recActivity.recurrence)
         if (dates.includes(dateKey)) {
-          recurringInstancesOnDate.push({
-            ...recActivity,
-            date: dateKey,
-          })
+          recurringInstancesOnDate.push({ ...recActivity, date: dateKey })
         }
       }
 
       const allActivitiesOnDate = [...directActivitiesOnDate, ...recurringInstancesOnDate]
 
-      // Find overlaps
       const overlapping = allActivitiesOnDate.filter(
         existing => existing.id !== a.id && timesOverlap(existing.startTime, existing.endTime, a.startTime, a.endTime)
       )
 
-      // Split overlapping activities (only direct ones)
       for (const overlappingAct of overlapping) {
-        const splitParts = splitActivity(overlappingAct, a)
-        
-        // Only delete direct activities, not recurring activity instances
         if (!overlappingAct.recurrence) {
+          const splitParts = subtractTimeRange(overlappingAct, a)
           await sync.delete('calendarActivities', overlappingAct.id)
-          
           for (const part of splitParts) {
             await sync.put('calendarActivities', part as unknown as Record<string, unknown>)
           }
         }
-        
         splitDetails.push(`"${overlappingAct.title}" (${fmtTime(overlappingAct.startTime)}-${fmtTime(overlappingAct.endTime)})`)
       }
-      
-      // Save the new/updated activity
-      const record = {
-        ...a,
-        id: a.id || generateId(),
-      }
-      await sync.put('calendarActivities', record as unknown as Record<string, unknown>)
+
+      const directRec = { ...a, id: a.id || generateId() }
+      await db.calendarActivities.put(directRec)
+      await sync.put('calendarActivities', directRec as unknown as Record<string, unknown>)
     }
 
-    // Show notification if there were splits
     if (splitDetails.length > 0) {
       setSplitNotification({
-        title: `${splitDetails.length} activit${splitDetails.length !== 1 ? 'ies were' : 'y was'} split to make room`,
-        details: splitDetails.map(d => d),
+        title: `${splitDetails.length} activit${splitDetails.length !== 1 ? 'ies were' : 'y was'} adjusted to make room`,
+        details: splitDetails,
       })
       setTimeout(() => setSplitNotification(null), 5000)
     }
 
-    // Reload activities
     await load()
     setShowForm(false)
     setEditActivity(undefined)
     setOriginalRecurringActivity(undefined)
   }
 
-  const deleteActivity = async (id: string, isRecurring: boolean = false) => {
-    if (isRecurring) {
-      // Deleting a recurring activity - delete the entire series
-      await sync.delete('calendarActivities', id)
-      // No need to filter activities since load will be called
+  const deleteActivity = async (id: string, isRecurring: boolean = false, stopFromDate?: string, instanceOnly: boolean = false) => {
+    if (isRecurring && stopFromDate && instanceOnly) {
+      // ── Delete only this one occurrence ──────────────────
+      // Add the date to the series' skippedDates list so load() suppresses it.
+      const existing = await db.calendarActivities.get(id)
+      if (existing?.recurrence) {
+        const skippedDates: string[] = (existing as any).skippedDates ?? []
+        if (!skippedDates.includes(stopFromDate)) {
+          const updated = { ...existing, skippedDates: [...skippedDates, stopFromDate] }
+          await db.calendarActivities.put(updated as any)
+          await sync.put('calendarActivities', updated as unknown as Record<string, unknown>)
+        }
+      }
+    } else if (isRecurring && stopFromDate) {
+      // ── Stop from here — truncate the series ─────────────
+      const existing = await db.calendarActivities.get(id)
+      if (existing?.recurrence) {
+        const dayBefore = new Date(stopFromDate + 'T00:00:00')
+        dayBefore.setDate(dayBefore.getDate() - 1)
+        const endDate = toDateKey(dayBefore)
+
+        if (endDate < existing.date) {
+          // Stop point is before the series start — delete entire series.
+          await db.calendarActivities.delete(id)
+          await sync.delete('calendarActivities', id)
+        } else {
+          const updated: CalendarActivity = {
+            ...existing,
+            recurrence: { ...existing.recurrence!, endDate },
+          }
+          await db.calendarActivities.put(updated)
+          await sync.put('calendarActivities', updated as unknown as Record<string, unknown>)
+        }
+      } else {
+        await db.calendarActivities.delete(id)
+        await sync.delete('calendarActivities', id)
+      }
     } else {
-      // Deleting a direct activity
+      await db.calendarActivities.delete(id)
       await sync.delete('calendarActivities', id)
     }
-    setActivities(prev => prev.filter(a => a.id !== id))
+
+    await load()
     setShowForm(false)
     setEditActivity(undefined)
     setOriginalRecurringActivity(undefined)
@@ -1341,12 +1503,28 @@ export default function CalendarPage() {
                   onClick={e => { 
                     e.stopPropagation()
                     setEditActivity(a)
-                    // If this activity has recurrence, set it as the original recurring activity for editing
+                    // Determine whether user clicked a recurring instance (this date) or the series anchor.
+                    // Editing an instance should create a direct (non-recurring) override for selectedDate.
                     if (a.recurrence) {
-                      setOriginalRecurringActivity(a)
+                      // If this is a generated pseudo-instance, `anchorDate` holds the series' anchor date.
+                      const isRecurrenceInstance = (a as any).isRecurrenceInstance === true
+                      const anchorDate = (a as any).anchorDate as string | undefined
+
+                      if (isRecurrenceInstance && anchorDate) {
+                        // Treat as editing this occurrence only (non-recurring override).
+                        // Point the form at the actual recurring series anchor.
+                        setOriginalRecurringActivity({ ...(a as CalendarActivity), date: anchorDate } as CalendarActivity)
+                        setEditingInstanceOfRecurring(true)
+                      } else {
+                        // Series anchor edit.
+                        setOriginalRecurringActivity(a)
+                        setEditingInstanceOfRecurring(false)
+                      }
                     } else {
                       setOriginalRecurringActivity(undefined)
+                      setEditingInstanceOfRecurring(false)
                     }
+
                     setShowForm(true) 
                   }}
                   style={{
@@ -1420,10 +1598,11 @@ export default function CalendarPage() {
               : { id: '', title: '', date: selectedDate, startTime: newStartTime, endTime: newEndTime,
                   color: COLORS[0], createdAt: '' }
             }
-            originalRecurringActivity={editActivity?.recurrence ? editActivity : undefined}
+            originalRecurringActivity={originalRecurringActivity}
+            editingInstanceOfRecurring={editingInstanceOfRecurring}
             onSave={saveActivity}
-            onCancel={() => { setShowForm(false); setEditActivity(undefined); setOriginalRecurringActivity(undefined) }}
-            onDelete={editActivity ? () => deleteActivity(editActivity.id, !!editActivity.recurrence) : undefined}
+            onCancel={() => { setShowForm(false); setEditActivity(undefined); setOriginalRecurringActivity(undefined); setEditingInstanceOfRecurring(false) }}
+            onDelete={editActivity ? (scope?: 'instance') => deleteActivity(editActivity.id, !!editActivity.recurrence, selectedDate, scope === 'instance') : undefined}
           />
           <p style={{ fontSize: 12, opacity: 0.6, marginTop: 8 }}>
             Duration: {Math.round((timeToMinutes(newEndTime || '10:00') - timeToMinutes(newStartTime)) / 60)}h

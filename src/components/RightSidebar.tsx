@@ -273,7 +273,7 @@ export default function RightSidebar({ onDataChange }: Props) {
          <p className="rs-label">Habits today</p>
          <p className="rs-big">{todayLogs.length}/{habits.length}</p>
          <div style={{ display:'flex', flexDirection:'column', gap:6, marginTop:6 }}>
-           {sortHabits(habits, habitSort).map(h => {
+             {sortHabits(habits, habitSort).map((h: Habit) => {
              const isDone = todayLogs.some(l => l.habitId === h.id && toDateKey(l.completedAt) === todayKeyForHabit)
              return (
         <div 

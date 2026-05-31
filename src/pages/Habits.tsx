@@ -8,7 +8,10 @@ const HABIT_SORT_OPTIONS = [
   { value: 'frequency', label: 'Frequency' },
 ]
 
-export function sortHabits(habits, sortOrder) {
+export function sortHabits(
+  habits: Habit[],
+  sortOrder: 'name' | 'created' | 'color' | 'frequency' | string,
+) {
   if (sortOrder === 'name') {
     return [...habits].sort((a, b) => a.name.localeCompare(b.name))
   } else if (sortOrder === 'created') {
@@ -27,6 +30,8 @@ import Modal from '../components/Modal'
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
 import HabitValueModal from '../components/HabitValueModal'
 import HabitHeatmap from '../components/HabitHeatmap'
+import LogHabitModal from '../components/LogHabitModal'
+
 import { IconPlus, IconTrash, IconCheck, IconArchive } from '../components/Icons'
 import { toDateKey, getPastTags } from '../utils'
 import TagSuggestions from '../components/TagSuggestions'
@@ -329,9 +334,11 @@ export default function Habits() {
     localStorage.setItem(TAG_ORDER_KEY, JSON.stringify(tagOrder))
   }, [tagOrder])
 
+  // Persisted for future UI ordering; currently not used.
   useEffect(() => {
     localStorage.setItem(HABIT_ORDER_KEY, JSON.stringify(habitOrderByTag))
   }, [habitOrderByTag])
+
 
 
   const [habits,  setHabits]  = useState<Habit[]>([])
@@ -353,10 +360,14 @@ export default function Habits() {
   const [logs,    setLogs]    = useState<HabitLog[]>([])
   const [loading, setLoading] = useState(true)
   const [modal,   setModal]   = useState<'new' | Habit | null>(null)
+  const [logHabitOpen, setLogHabitOpen] = useState(false)
+
   const [deleteHabitId, setDeleteHabitId] = useState<string | null>(null)
   const [deleteHabitName, setDeleteHabitName] = useState<string>('')
 
-  const [valueModalHabit, setValueModalHabit] = useState<Habit | null>(null)
+  const [valueModalTarget, setValueModalTarget] = useState<{ habit: Habit; dateKey: string } | null>(null)
+
+
 
   // Tag filter state
   const [selectedTags, setSelectedTags] = useState<string[]>([])
@@ -386,7 +397,14 @@ export default function Habits() {
 
   // Heatmap filter state
   const [filterMode, setFilterMode] = useState<'all' | 'none' | string>('all')
-  const effectiveFilterHabitIds = filterMode === 'all' ? displayedHabits.map(h => h.id) : filterMode === 'none' ? [] : [filterMode as string].filter(id => displayedHabits.some(h => h.id === id))
+const effectiveFilterHabitIds =
+    filterMode === 'all'
+      ? displayedHabits.map((h: Habit) => h.id)
+      : filterMode === 'none'
+        ? []
+        : [filterMode as string].filter(id =>
+            displayedHabits.some((h: Habit) => h.id === id),
+          )
 
   const [isMobile, setIsMobile] = useState(false)
 
@@ -453,10 +471,12 @@ export default function Habits() {
     if (existing) {
       await sync.delete('habitLogs', existing.id)
     } else {
+      // Store a completedAt that matches the clicked day (dateKey -> local day)
+      const completedAt = new Date(date + 'T00:00:00').toISOString()
       const log: HabitLog = {
         id:          generateId(),
         habitId,
-        completedAt: new Date().toISOString(),
+        completedAt,
         value,
       }
       await sync.put('habitLogs', log as unknown as Record<string, unknown>)
@@ -476,20 +496,24 @@ export default function Habits() {
     }
 
     if (habit.quota) {
-      // Prompt for value
-      setValueModalHabit(habit)
+      setValueModalTarget({ habit, dateKey: date })
     } else {
-      // Simple toggle
       toggleHabit(habitId, date)
     }
   }
 
-  function handleValueSave(value: number) {
-    if (!valueModalHabit) return
-    const today = toDateKey(new Date().toISOString())
-    toggleHabit(valueModalHabit.id, today, value)
-    setValueModalHabit(null)
+  function handleToggleFromHeatmap(habitId: string, date: string) {
+    // Same behavior as the row toggle: toggle historical day.
+    handleToggle(habitId, date)
   }
+
+  async function handleValueSave(value: number) {
+    if (!valueModalTarget) return
+    await toggleHabit(valueModalTarget.habit.id, valueModalTarget.dateKey, value)
+    setValueModalTarget(null)
+  }
+
+
 
   if (loading) return <div className="page-loading">Loading…</div>
 
@@ -501,7 +525,7 @@ export default function Habits() {
     <div className="page">
       <div className="page-header">
         <h1>Habits</h1>
-        <p className="page-sub">{logs.filter(l => toDateKey(l.completedAt) === today && displayedHabits.some(h => h.id === l.habitId)).length}/{displayedHabits.length} done today</p>
+<p className="page-sub">{logs.filter(l => toDateKey(l.completedAt) === today && displayedHabits.some((h: Habit) => h.id === l.habitId)).length}/{displayedHabits.length} done today</p>
       </div>
 
       <div className="section-header" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -526,7 +550,17 @@ export default function Habits() {
         <button className="btn btn-primary" onClick={() => setModal('new')}>
           <IconPlus /> New habit
         </button>
+
+        <button
+          className="btn btn-secondary"
+          onClick={() => setLogHabitOpen(true)}
+          style={{ whiteSpace: 'nowrap' }}
+        >
+          + Log for a past day
+        </button>
+
       </div>
+
 
       {/* Tag Filter UI */}
       {allTags.length > 0 && (
@@ -605,7 +639,7 @@ export default function Habits() {
       {/* Habit Heatmap Section */}
       {habits.length > 0 && (
         <section className="card heatmap-card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 12 }}>
             <h2 className="card-title">Habit heatmap</h2>
             <select 
               value={filterMode}
@@ -619,9 +653,14 @@ export default function Habits() {
               <option key={h.id} value={h.id}>{h.name}</option>
             ))}
           </select>
-        </div>
+          </div>
 
-          <HabitHeatmap habits={displayedHabits} logs={filteredLogs} filterHabitIds={effectiveFilterHabitIds} />
+          <HabitHeatmap
+            habits={displayedHabits}
+            logs={filteredLogs}
+            filterHabitIds={effectiveFilterHabitIds}
+            onToggle={handleToggleFromHeatmap}
+          />
         </section>
       )}
 
@@ -684,13 +723,25 @@ export default function Habits() {
         />
       )}
 
-      {valueModalHabit && (
+      {valueModalTarget && (
         <HabitValueModal
-          habitName={valueModalHabit.name}
-          quotaType={valueModalHabit.quota!.type}
-          unit={valueModalHabit.quota!.unit}
+          habitName={valueModalTarget.habit.name}
+          quotaType={valueModalTarget.habit.quota!.type}
+          unit={valueModalTarget.habit.quota!.unit}
           onSave={handleValueSave}
-          onClose={() => setValueModalHabit(null)}
+          onClose={() => setValueModalTarget(null)}
+        />
+      )}
+
+
+      {logHabitOpen && (
+        <LogHabitModal
+          habits={displayedHabits}
+          initialDateKey={toDateKey(new Date().toISOString())}
+          onClose={() => setLogHabitOpen(false)}
+          onSave={async ({ habitId, dateKey, value }) => {
+            await toggleHabit(habitId, dateKey, value)
+          }}
         />
       )}
 
@@ -707,6 +758,7 @@ export default function Habits() {
           isDangerous
         />
       )}
+
     </div>
   )
 }
