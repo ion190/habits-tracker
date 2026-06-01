@@ -1,14 +1,12 @@
 import { useEffect, useState, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
 
 
 export default function WorkoutTimer() {
-  const navigate = useNavigate()
   const [elapsed, setElapsed] = useState(0)
   const [isActive, setIsActive] = useState(false)
 
-  // Central active workout checker - called on mount and events
-  const checkActive = useCallback(() => {
+  // Central active workout checker - recalculates elapsed time from timestamp
+  const refresh = useCallback(() => {
     const raw = localStorage.getItem('activeWorkout')
     const isActiveWorkout = !!raw
     
@@ -21,6 +19,7 @@ export default function WorkoutTimer() {
       } catch (e) {
         // Invalid activeWorkout data
         localStorage.removeItem('activeWorkout')
+        setElapsed(0)
       }
     } else {
       setElapsed(0)
@@ -28,25 +27,19 @@ export default function WorkoutTimer() {
     return isActiveWorkout
   }, [])
 
-  // Initial check on mount
+  // Initial check on mount and set up interval
   useEffect(() => {
-    checkActive()
-  }, [checkActive])
-
-  // Increment timer every second when active
-  useEffect(() => {
-    if (!isActive) return
+    refresh()
     
-    const interval = setInterval(() => {
-      setElapsed(prev => prev + 1)
-    }, 1000)
+    // Recalculate elapsed time every second (accounts for app backgrounding)
+    const interval = setInterval(refresh, 1000)
     
     return () => clearInterval(interval)
-  }, [isActive])
+  }, [refresh])
 
   // Listen for status changes (cross-tab + custom events)
   useEffect(() => {
-    const handleStatusChange = () => checkActive()
+    const handleStatusChange = () => refresh()
 
     window.addEventListener('storage', handleStatusChange)
     window.addEventListener('workoutStatusChange', handleStatusChange)
@@ -54,7 +47,7 @@ export default function WorkoutTimer() {
       window.removeEventListener('storage', handleStatusChange)
       window.removeEventListener('workoutStatusChange', handleStatusChange)
     }
-  }, [checkActive])
+  }, [refresh])
 
   if (!isActive) return null
 
@@ -68,9 +61,8 @@ export default function WorkoutTimer() {
       className="header-timer"
       onClick={() => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
-        navigate('/workouts');
       }}
-      title="Click to go to workouts (ActiveWorkout)"
+      title="Click to scroll to top"
     >
       {timerText}
     </div>

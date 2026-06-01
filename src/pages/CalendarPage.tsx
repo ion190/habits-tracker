@@ -457,7 +457,7 @@ function ActivityForm({ date, activity, originalRecurringActivity, editingInstan
         {/* Delete button — always shown for existing activities */}
         {onDelete && !editThisOccurrenceOnly && (
           <button className="btn btn-ghost" style={{ color: 'var(--danger)', marginRight: 'auto' }}
-            onClick={onDelete}>
+            onClick={() => onDelete()}>
             🛑 Stop from here
           </button>
         )}
@@ -593,8 +593,8 @@ export default function CalendarPage() {
     // Collect exclusion IDs for this date to suppress their corresponding recurring instances
     const exclusions = new Set<string>()
     for (const exc of allActivitiesOnDate) {
-      if (exc.notes?.startsWith('__EXCLUSION_FOR:')) {
-        const seriesId = exc.notes.substring('__EXCLUSION_FOR:'.length)
+      if (exc.notes?.startsWith('__EXCLUSION_FOR:') && exc.notes?.endsWith('__')) {
+        const seriesId = exc.notes.substring('__EXCLUSION_FOR:'.length, exc.notes.length - 2)
         exclusions.add(seriesId)
       }
     }
@@ -683,6 +683,23 @@ export default function CalendarPage() {
           await db.calendarActivities.delete(ov.id)
           toSync.push({ op: 'delete', id: ov.id })
         }
+
+        // Create an exclusion entry to hide the original recurring instance on this date
+        // This prevents the recurring instance from appearing alongside the override
+        const exclusionId = generateId()
+        const exclusion: CalendarActivity = {
+          id: exclusionId,
+          title: `[EXCLUSION: ${originalRecurring.id}]`,
+          date: a.date,
+          startTime: originalRecurring.startTime,
+          endTime: originalRecurring.endTime,
+          color: originalRecurring.color,
+          createdAt: new Date().toISOString(),
+          notes: `__EXCLUSION_FOR:${originalRecurring.id}__`,
+          recurrence: undefined,
+        }
+        await db.calendarActivities.put(exclusion)
+        toSync.push({ op: 'put', record: exclusion })
 
         // Overlap handling — only for direct (non-recurring) activities.
         // Recurring activities always coexist; never block or split them.
@@ -822,7 +839,7 @@ export default function CalendarPage() {
       // After transaction, sync the exclusion entry
       const exclusions = await db.calendarActivities
         .where('date').equals(instanceDate)
-        .filter(a => a.notes?.includes(`__EXCLUSION_FOR:${seriesId}__`))
+        .filter(a => (a.notes?.includes(`__EXCLUSION_FOR:${seriesId}__`) ?? false))
         .toArray()
       for (const exc of exclusions) {
         sync.put('calendarActivities', exc as unknown as Record<string, unknown>)

@@ -247,8 +247,6 @@ function HabitRow({
 
   return (
     <div className="habit-row-card" onClick={onEdit} role="button" tabIndex={0}>
-
-
       <button
         className={`habit-check ${doneToday ? 'done' : ''}`}
         style={{ borderColor: habit.color, background: doneToday ? habit.color : 'transparent' }}
@@ -258,13 +256,23 @@ function HabitRow({
         {doneToday && <IconCheck />}
       </button>
 
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <p className="item-name">{habit.name}</p>
-        <p className="item-sub">
-          {habit.frequency}
-          {habit.quota && ` · ${habit.quota.target}${habit.quota.unit ? ` ${habit.quota.unit}` : ''}`}
-          {todayLog?.value !== undefined && ` · Done: ${todayLog.value}${habit.quota?.unit ? ` ${habit.quota.unit}` : ''}`}
-        </p>
+      <div className="habit-row-main">
+        <div className="habit-row-header">
+          <p className="item-name">{habit.name}</p>
+          <div className="habit-meta">
+            <span>{habit.frequency}</span>
+            {habit.quota && (
+              <span className="meta-chip">
+                {habit.quota.target}{habit.quota.unit ? ` ${habit.quota.unit}` : ''}
+              </span>
+            )}
+            {todayLog?.value !== undefined && (
+              <span className="meta-chip done-chip">
+                Done: {todayLog.value}{habit.quota?.unit ? ` ${habit.quota.unit}` : ''}
+              </span>
+            )}
+          </div>
+        </div>
       </div>
 
       {last7 && (
@@ -293,7 +301,6 @@ function HabitRow({
         </button>
       </div>
     </div>
-
   )
 }
 
@@ -469,7 +476,11 @@ const effectiveFilterHabitIds =
       .first()
 
     if (existing) {
-      await sync.delete('habitLogs', existing.id)
+      if (value === undefined) {
+        await sync.delete('habitLogs', existing.id)
+      } else {
+        await sync.put('habitLogs', { ...existing, value } as unknown as Record<string, unknown>)
+      }
     } else {
       // Store a completedAt that matches the clicked day (dateKey -> local day)
       const completedAt = new Date(date + 'T00:00:00').toISOString()

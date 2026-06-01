@@ -180,9 +180,9 @@ function PlanModal({ initial, exercises, onSave, onClose }: {
                       onClick={() => exData && setDetailEx(exData)} />
                   )}
                   <span className="plan-ex-name" style={{ cursor:'pointer' }} onClick={() => exData && setDetailEx(exData)}>{row._name}</span>
-                  <label className="plan-ex-field"><span>Sets</span><input type="number" className="field field-sm" min={1} value={row.sets} onChange={e => update(row._key,'sets',+e.target.value)} /></label>
-                  <label className="plan-ex-field"><span>Reps</span><input type="number" className="field field-sm" min={1} value={row.reps} onChange={e => update(row._key,'reps',+e.target.value)} /></label>
-                  <label className="plan-ex-field"><span>kg</span><input type="number" className="field field-sm" min={0} value={row.weight} onChange={e => update(row._key,'weight',+e.target.value)} /></label>
+                  <label className="plan-ex-field"><span>Sets</span><input type="number" className="field field-sm" min={1} value={row.sets} onChange={e => update(row._key,'sets',+e.target.value)} onFocus={e => e.target.select()} /></label>
+                  <label className="plan-ex-field"><span>Reps</span><input type="number" className="field field-sm" min={1} value={row.reps} onChange={e => update(row._key,'reps',+e.target.value)} onFocus={e => e.target.select()} /></label>
+                  <label className="plan-ex-field"><span>kg</span><input type="number" className="field field-sm" min={0} value={row.weight} onChange={e => update(row._key,'weight',+e.target.value)} onFocus={e => e.target.select()} /></label>
                   <button className="btn btn-ghost danger icon-btn" onClick={() => setRows(r => r.filter(x => x._key !== row._key))}><IconTrash /></button>
                 </div>
               )
