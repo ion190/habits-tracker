@@ -1230,23 +1230,35 @@ textarea.field { resize: vertical; }
 
 /* Mobile responsive styling for plan exercise row */
 @media (max-width: 640px) {
+  .modal-body {
+    padding: 14px 14px;
+  }
+
   .plan-ex-row {
-    gap: 6px;
-    padding: 6px 0;
+    gap: 3px;
+    padding: 4px 0;
   }
 
   .plan-ex-name {
     font-size: 12px;
+    flex: 1;
   }
 
   .plan-ex-field {
-    font-size: 9px;
-    gap: 1px;
+    font-size: 8px;
+    gap: 0px;
+    flex-shrink: 1;
+  }
+
+  .plan-ex-field span {
+    display: none;
   }
 
   .plan-ex-field input {
-    height: 24px;
-    font-size: 11px;
+    height: 20px;
+    font-size: 10px;
+    width: 32px;
+    padding: 2px 4px;
   }
 }
 

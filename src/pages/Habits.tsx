@@ -482,8 +482,8 @@ const effectiveFilterHabitIds =
         await sync.put('habitLogs', { ...existing, value } as unknown as Record<string, unknown>)
       }
     } else {
-      // Store a completedAt that matches the clicked day (dateKey -> local day)
-      const completedAt = new Date(date + 'T00:00:00').toISOString()
+      // Store a completedAt at midday to avoid timezone-caused date shifts
+      const completedAt = new Date(date + 'T12:00:00').toISOString()
       const log: HabitLog = {
         id:          generateId(),
         habitId,

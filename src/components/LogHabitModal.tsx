@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 
 import Modal from './Modal'
 import DatePickerInput from './DatePickerInput'
+import { useEnterSave } from './useEnterSave'
+
 import type { Habit } from '../db/database'
 
 
@@ -62,7 +64,7 @@ export default function LogHabitModal({ habits, initialDateKey, onClose, onSave 
     })
   }, [dateKey, selectedHabits, habitStates])
 
-  function submit() {
+  const submit = () => {
     if (!canSave) return
     selectedHabits.forEach(habit => {
       const rawValue = habitStates[habit.id]?.value
@@ -71,6 +73,9 @@ export default function LogHabitModal({ habits, initialDateKey, onClose, onSave 
     })
     onClose()
   }
+
+  useEnterSave(submit)
+
 
 
 

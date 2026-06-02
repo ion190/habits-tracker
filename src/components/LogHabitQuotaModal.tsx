@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 
 
 import Modal from './Modal'
+import { useEnterSave } from './useEnterSave'
+
 import type { Habit } from '../db/database'
 import DatePickerInput from './DatePickerInput'
 
@@ -27,14 +29,18 @@ export default function LogHabitQuotaModal({ habit, initialDateKey, onClose, onC
 
 
 
-  function submit() {
+  const submit = () => {
     if (!requiresValue || !parsedValue) return
     onConfirm({ habitId: habit.id, dateKey, value: parsedValue })
     onClose()
   }
 
+  useEnterSave(submit)
+
   return (
     <Modal title={`Log quota: ${habit.name}`} onClose={onClose} width={420}>
+
+
       <div className="form-stack">
         <div className="form-label">
           Date

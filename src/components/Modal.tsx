@@ -27,6 +27,7 @@ export default function Modal({ title, onClose, children, width = 520 }: Props) 
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
+
   // Prevent body scroll when modal is open
   useEffect(() => {
     document.body.style.overflow = 'hidden'

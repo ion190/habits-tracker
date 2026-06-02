@@ -20,6 +20,7 @@ export default function DatePickerInput({
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const inputRef = useRef<HTMLInputElement>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [inputValue, setInputValue] = useState(value);
 
   // Detect mobile by window width
   useEffect(() => {
@@ -28,6 +29,34 @@ export default function DatePickerInput({
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  useEffect(() => {
+    setInputValue(value);
+  }, [value]);
+
+  const normalizeDateValue = (rawValue: string): string | undefined => {
+    const isoMatch = rawValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (isoMatch) {
+      const date = new Date(`${rawValue}T00:00:00`);
+      if (!Number.isNaN(date.getTime())) return rawValue;
+    }
+
+    const usMatch = rawValue.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+    if (usMatch) {
+      const [, month, day, year] = usMatch;
+      const date = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T00:00:00`);
+      if (!Number.isNaN(date.getTime())) return date.toISOString().split('T')[0];
+    }
+
+    const isoAltMatch = rawValue.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/);
+    if (isoAltMatch) {
+      const [, year, month, day] = isoAltMatch;
+      const date = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T00:00:00`);
+      if (!Number.isNaN(date.getTime())) return date.toISOString().split('T')[0];
+    }
+
+    return undefined;
+  };
 
   // Parse the value to a Date object
   const selectedDate = value ? new Date(value + 'T00:00:00') : undefined;
@@ -45,37 +74,50 @@ export default function DatePickerInput({
 
   const handleSelect = (date: Date | undefined) => {
     if (date) {
-      // Format as YYYY-MM-DD
       const iso = date.toISOString().split('T')[0];
+      setInputValue(iso);
       onChange(iso);
       setIsOpen(false);
     }
   };
 
-  // Accept manual typing always
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const inputValue = e.target.value;
-    // Accept native date input or manual text
-    if (/^\d{4}-\d{2}-\d{2}$/.test(inputValue)) {
-      onChange(inputValue);
-    } else if (inputValue === '') {
+    const rawValue = e.target.value;
+    setInputValue(rawValue);
+
+    if (rawValue === '') {
       onChange('');
-    } else {
-      // For native date input, let browser handle
-      onChange(inputValue);
+      return;
+    }
+
+    const normalized = normalizeDateValue(rawValue);
+    if (normalized) {
+      onChange(normalized);
+    }
+  };
+
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter') return;
+    const normalized = normalizeDateValue(inputValue);
+    if (normalized) {
+      setInputValue(normalized);
+      onChange(normalized);
+      setIsOpen(false);
     }
   };
 
   return (
-    <div style={{ position: 'relative', display: 'inline-block', width: '100%' }}>
+    <div style={{ position: 'relative', display: 'inline-block', width: '100%', zIndex: isOpen ? 10001 : undefined }}>
       <input
         ref={inputRef}
         type={isMobile ? 'date' : 'text'}
         className={`field ${className}`}
-        value={value}
+        value={inputValue}
         onChange={handleInputChange}
+        onKeyDown={handleInputKeyDown}
         placeholder={placeholder}
         onFocus={() => !isMobile && setIsOpen(true)}
+        inputMode="numeric"
         pattern="\d{4}-\d{2}-\d{2}"
         style={isMobile ? { fontSize: 16 } : {}}
       />
