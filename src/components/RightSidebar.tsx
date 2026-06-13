@@ -4,6 +4,9 @@ import { db, generateId } from '../db/database'
 import StartWorkoutModal from './StartWorkoutModal'
 import StartWorkSessionModal from './StartWorkSessionModal'
 import type { Habit, HabitLog, Task, CalendarActivity, JournalEntry } from '../db/database'
+import { sortHabits } from '../pages/habits/sortHabits'
+
+const HABIT_SORT_KEY = 'habitsSortOrder'
 import { toDateKey, isTaskDueOnDate } from '../utils'
 
 
@@ -143,6 +146,7 @@ function DayPopup({ date, activities, tasks, journal, onClose, onNavigate }: {
 }
 
 export default function RightSidebar({ onDataChange }: Props) {
+  const [habitSort, setHabitSort] = useState(() => localStorage.getItem(HABIT_SORT_KEY) || 'name')
   const navigate = useNavigate()
   const [habits,              setHabits]              = useState<Habit[]>([])
   const [logs,                setLogs]                = useState<HabitLog[]>([])
@@ -270,7 +274,7 @@ export default function RightSidebar({ onDataChange }: Props) {
          <p className="rs-label">Habits today</p>
          <p className="rs-big">{todayLogs.length}/{habits.length}</p>
          <div style={{ display:'flex', flexDirection:'column', gap:6, marginTop:6 }}>
-           {habits.map(h => {
+             {sortHabits(habits, habitSort).map((h: Habit) => {
              const isDone = todayLogs.some(l => l.habitId === h.id && toDateKey(l.completedAt) === todayKeyForHabit)
              return (
         <div 

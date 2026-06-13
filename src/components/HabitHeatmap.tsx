@@ -8,12 +8,49 @@ interface DayData {
   count: number
   habitNames: string[]
   habitColors: string[]
+  habitIds: string[]
 }
 
-function Tooltip({ day, x, y }: { day: DayData; x: number; y: number }) {
-  const style: CSSProperties = {
-    position: 'fixed', left: x + 12, top: y - 12, zIndex: 9999, pointerEvents: 'none',
+
+function Tooltip({
+  day,
+  x,
+  y,
+  onToggle,
+}: {
+  day: DayData
+  x: number
+  y: number
+  onToggle?: (habitId: string, date: string) => void
+}) {
+  const TOOLTIP_W = 280
+  const TOOLTIP_H = 240
+  const padding = 12
+
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 375
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 667
+
+  // Desired tooltip placement
+  let left = x + 12
+  let top = y - 12
+
+  // If bottom overflows, flip below the cursor
+  if (top + TOOLTIP_H + padding > vh) {
+    top = y + 12
   }
+
+  // Clamp into viewport
+  left = Math.min(Math.max(left, padding), vw - TOOLTIP_W - padding)
+  top = Math.min(Math.max(top, padding), vh - TOOLTIP_H - padding)
+
+  const style: CSSProperties = {
+    position: 'fixed',
+    left,
+    top,
+    zIndex: 9999,
+    pointerEvents: 'none',
+  }
+
   const dateStr = new Date(day.date + 'T00:00:00').toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   })
@@ -25,17 +62,31 @@ function Tooltip({ day, x, y }: { day: DayData; x: number; y: number }) {
           <p className="hm-tooltip-label">Habits completed ({day.count})</p>
           <div className="hm-tooltip-habits">
             {day.habitNames.slice(0, 5).map((name, i) => (
-              <span key={i} className="hm-tooltip-tag" style={{
-                background: day.habitColors[i] + '22',
-                borderColor: day.habitColors[i] + '55',
-                color: day.habitColors[i],
-              }}>
+              <button
+                key={i}
+                type="button"
+                className="hm-tooltip-tag"
+                style={{
+                  background: day.habitColors[i] + '22',
+                  borderColor: day.habitColors[i] + '55',
+                  color: day.habitColors[i],
+                  cursor: onToggle ? 'pointer' : 'default',
+                }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  // day.habitIds is aligned with habitNames/colors
+                  const habitId = day.habitIds?.[i]
+                  if (!habitId || !onToggle) return
+                  onToggle(habitId, day.date)
+                }}
+                aria-label={`Toggle completion for ${name} on ${day.date}`}
+              >
                 <span className="hm-tooltip-dot" style={{ background: day.habitColors[i] }} />
                 {name}
-              </span>
+              </button>
             ))}
             {day.habitNames.length > 5 && (
-              <span className="hm-tooltip-tag" style={{ background: 'var(--border)', color: 'var(--text)' }}>
+              <span className="hm-tooltip-tag" style={{ background: 'var(--border)', color: 'var(--text)', cursor: 'default' }}>
                 +{day.habitNames.length - 5} more
               </span>
             )}
@@ -60,9 +111,26 @@ interface Props {
   habits: Habit[]
   logs: HabitLog[]
   filterHabitIds?: string[]
+
+  // If provided, cells on this date will be visually marked as:
+  // - logged (>=1 habit log on that date)
+  // - not logged (no habit log on that date)
+  selectedDateKey?: string
+
+  onToggle?: (habitId: string, date: string) => void
+  onSelectDate?: (dateKey: string) => void
 }
 
-export default function HabitHeatmap({ habits, logs, filterHabitIds }: Props) {
+export default function HabitHeatmap({
+  habits,
+  logs,
+  filterHabitIds,
+  selectedDateKey,
+  onToggle,
+  onSelectDate,
+}: Props) {
+
+
   const [hovered, setHovered] = useState<DayData | null>(null)
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -86,17 +154,26 @@ export default function HabitHeatmap({ habits, logs, filterHabitIds }: Props) {
 
   const dayMap = useMemo(() => {
     const map = new Map<string, DayData>()
-    for (const key of days) map.set(key, { date: key, count: 0, habitNames: [], habitColors: [] })
+    for (const key of days) {
+      map.set(key, {
+        date: key,
+        count: 0,
+        habitNames: [],
+        habitColors: [],
+        habitIds: [],
+      })
+    }
 
     const filteredLogs = filterHabitIds ? logs.filter(l => filterHabitIds.includes(l.habitId)) : logs
 
     for (const log of filteredLogs) {
       const key = toDateKey(log.completedAt)
       const entry = map.get(key)
-      if (entry && !entry.habitColors.some(c => c === log.habitId)) {
+      if (entry && !entry.habitIds.includes(log.habitId)) {
         const habit = habits.find(h => h.id === log.habitId)
         if (habit) {
           entry.count++
+          entry.habitIds.push(log.habitId)
           entry.habitNames.push(habit.name)
           entry.habitColors.push(habit.color)
         }
@@ -167,19 +244,36 @@ export default function HabitHeatmap({ habits, logs, filterHabitIds }: Props) {
             const day = dayMap.get(d)!
             const col = Math.floor((pad + i) / 7) + 1
             const row = ((pad + i) % 7) + 2
+
+            const isSelectedDay = !!selectedDateKey && d === selectedDateKey
+            const hasAnyLogOnSelectedDay = isSelectedDay && day.count > 0
+
             return (
               <div
                 key={d}
-                className={`hm-cell ${getCls(day.count)}`}
+                className={`hm-cell ${getCls(day.count)} ${isSelectedDay ? 'hm-selected-day' : ''} ${hasAnyLogOnSelectedDay ? 'hm-selected-day-logged' : isSelectedDay ? 'hm-selected-day-not-logged' : ''}`}
                 style={{ borderRadius: 3, cursor: 'pointer', gridRow: row, gridColumn: col }}
                 onMouseEnter={() => setHovered(day)}
                 onMouseLeave={() => setHovered(null)}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onSelectDate?.(day.date)
+
+                  // If consumer provided onToggle we keep the existing behavior (toggle first habit).
+                  // If not provided, click is only for selection.
+                  if (!onToggle) return
+
+                  const habitId = day.habitIds?.[0]
+                  if (!habitId) return
+                  onToggle(habitId, day.date)
+                }}
                 role="button"
                 tabIndex={0}
                 aria-label={`${d}: ${day.count} habits`}
               />
             )
           })}
+
         </div>
       </div>
 
@@ -192,7 +286,10 @@ export default function HabitHeatmap({ habits, logs, filterHabitIds }: Props) {
         ))}
       </div>
 
-      {hovered && <Tooltip day={hovered} x={mousePos.x} y={mousePos.y} />}
+      {hovered && (
+        <Tooltip day={hovered} x={mousePos.x} y={mousePos.y} onToggle={onToggle} />
+      )}
+
     </div>
   )
 }

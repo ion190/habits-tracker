@@ -8,12 +8,25 @@ interface Props {
 }
 
 export default function Modal({ title, onClose, children, width = 520 }: Props) {
+  // Autofocus first input/select/textarea inside the modal when it opens
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const root = document.querySelector('.modal') as HTMLElement | null
+      const el = root?.querySelector('input, select, textarea, [tabindex]:not([tabindex="-1"])') as HTMLElement | null
+      if (el && typeof (el as HTMLElement).focus === 'function') {
+        ;(el as HTMLElement).focus()
+      }
+    }, 0)
+    return () => window.clearTimeout(t)
+  }, [])
+
   // Close on Escape
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
+
 
   // Prevent body scroll when modal is open
   useEffect(() => {

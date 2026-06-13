@@ -1,5 +1,8 @@
 import { useState } from 'react'
 import Modal from './Modal'
+import { useEnterSave } from './useEnterSave'
+
+
 
 interface Props {
   habitName: string
@@ -12,15 +15,18 @@ interface Props {
 export default function HabitValueModal({ habitName, quotaType, unit, onSave, onClose }: Props) {
   const [value, setValue] = useState('')
 
-  function submit() {
+  const submit = () => {
     const num = parseFloat(value)
     if (Number.isNaN(num) || num < 0) return
     onSave(num)
     onClose()
   }
 
+  useEnterSave(submit)
+
   return (
     <Modal title={`Log ${habitName}`} onClose={onClose} width={360}>
+
       <div className="form-stack">
         <label className="form-label">
           {quotaType === 'time' ? 'Time spent' : 'Amount completed'} ({unit})

@@ -2,6 +2,9 @@ import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { db, generateId, dateKeyForPeriod } from '../db/database'
 import type { CalendarActivity, CompletedWorkSession, WorkSessionCategory, JournalEntry, Habit, HabitLog, CompletedWorkout, Task } from '../db/database'
+import { sortHabits } from './habits/sortHabits'
+
+const HABIT_SORT_KEY = 'habitsSortOrder'
 import { formatDuration, toDateKey, startOfWeek, isTaskDueOnDate, getPastTags } from '../utils'
 
 import { sync } from '../db/sync'
@@ -270,6 +273,7 @@ function WorkoutRow({ w }: { w: CompletedWorkout }) {
 export default function Dashboard() {
   const navigate = useNavigate()
   const [habits, setHabits] = useState<Habit[]>([])
+  const [habitSort, setHabitSort] = useState(() => localStorage.getItem(HABIT_SORT_KEY) || 'name')
   const [logs, setLogs] = useState<HabitLog[]>([])
   const [workouts, setWorkouts] = useState<CompletedWorkout[]>([])
   const [allWorkouts, setAllWorkouts] = useState<CompletedWorkout[]>([])
@@ -352,23 +356,35 @@ export default function Dashboard() {
       setTomorrowKey(tomorrowKeyLocal)
 
       const todaysAll = acts.filter((a: CalendarActivity) => a.date === todayKeyLocal)
-      
-      // Split today's into past/completed vs future
+
+      // Split today's into future vs past vs ongoing.
+      // Include in-progress activities (start <= now <= end), which were previously dropped.
       const futureTodays = todaysAll.filter((a: CalendarActivity) => {
         const startDateTime = new Date(todayKeyLocal + 'T' + a.startTime + ':00')
         return startDateTime > now
       })
+
       const pastTodays = todaysAll.filter((a: CalendarActivity) => {
         const endDateTime = new Date(todayKeyLocal + 'T' + a.endTime + ':00')
         return endDateTime < now
       })
-      
+
+      const ongoingTodays = todaysAll.filter((a: CalendarActivity) => {
+        const startDateTime = new Date(todayKeyLocal + 'T' + a.startTime + ':00')
+        const endDateTime = new Date(todayKeyLocal + 'T' + a.endTime + ':00')
+        return startDateTime <= now && endDateTime >= now
+      })
+
       const tomorrowActs = acts.filter((a: CalendarActivity) => a.date === tomorrowKeyLocal)
-      setTodaysActivities([...futureTodays, ...pastTodays]) // Future first
+
+      // Future first, then ongoing, then past
+      setTodaysActivities([...futureTodays, ...ongoingTodays, ...pastTodays])
       setTodaysFutureActivities(futureTodays)
       setTomorrowActivities(tomorrowActs)
+
       const jEntry = await db.journalEntries.filter(e => e.period === 'daily' && e.dateKey === todayKeyLocal).first()
       setTodayJournal(jEntry ?? null)
+
 
       const thisWeekWorkouts = w.filter((x: CompletedWorkout) => new Date(x.startedAt) >= weekStart)
 
@@ -393,6 +409,9 @@ export default function Dashboard() {
   useEffect(() => {
     load()
     loadTaskTags()
+    const onStorage = () => setHabitSort(localStorage.getItem(HABIT_SORT_KEY) || 'name')
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
   }, [load, loadTaskTags])
 
   // Focus task title input when modal opens
@@ -417,6 +436,7 @@ export default function Dashboard() {
 
   const today = toDateKey(new Date().toISOString())
   const todayLogs = logs.filter((l) => toDateKey(l.completedAt) === today)
+  const sortedHabits = sortHabits(habits, habitSort)
 
   const todaysTasks = tasks.filter((t) => {
     if (t.archivedAt) return false

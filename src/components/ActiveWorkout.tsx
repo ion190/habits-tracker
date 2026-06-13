@@ -251,12 +251,19 @@ export default function ActiveWorkout({ onFinished, onDiscard }: Props) {
                     <tr key={setIdx} className={set.done ? 'set-done' : ''}>
                       <td>{setIdx + 1}</td>
                       <td>
-                        <input type="number" className="field field-sm" min={0} value={set.reps}
-                          onChange={e => updateSet(exIdx, setIdx, 'reps', +e.target.value)} />
+                        <input
+                          type="number"
+                          className="field field-sm"
+                          min={0}
+                          value={set.reps}
+                          onChange={e => updateSet(exIdx, setIdx, 'reps', +e.target.value)}
+                          onFocus={e => e.target.select()}
+                        />
                       </td>
                       <td className="kg-col">
                         <input type="number" className="field field-sm" min={0} step={0.5} value={set.weight}
-                          onChange={e => updateSet(exIdx, setIdx, 'weight', +e.target.value)} />
+                          onChange={e => updateSet(exIdx, setIdx, 'weight', +e.target.value)}
+                          onFocus={e => e.target.select()} />
                       </td>
                       <td></td>
                       <td className="done-col">

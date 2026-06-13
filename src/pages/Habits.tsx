@@ -1,11 +1,21 @@
 import { useEffect, useState, useMemo } from 'react'
+
+import {
+  HABIT_SORT_KEY,
+  HABIT_SORT_OPTIONS,
+  sortHabits,
+} from './habits/sortHabits.ts'
+
 import { db, generateId } from '../db/database'
+
 import { sync } from '../db/sync'
 import type { Habit, HabitLog } from '../db/database'
 import Modal from '../components/Modal'
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
 import HabitValueModal from '../components/HabitValueModal'
 import HabitHeatmap from '../components/HabitHeatmap'
+import LogHabitModal from '../components/LogHabitModal'
+
 import { IconPlus, IconTrash, IconCheck, IconArchive } from '../components/Icons'
 import { toDateKey, getPastTags } from '../utils'
 import TagSuggestions from '../components/TagSuggestions'
@@ -197,20 +207,29 @@ function HabitModal({
 // ── Habit row ─────────────────────────────────────────────
 
 function HabitRow({
-  habit, logs, onToggle, onEdit, onArchive, showStreak
+  habit,
+  logs,
+  selectedDateKey,
+  onToggle,
+  onEdit,
+  onArchive,
+  showStreak,
 }: {
   habit: Habit
   logs: HabitLog[]
+  selectedDateKey: string
   onToggle: (habitId: string, date: string) => void
   onEdit: () => void
   onArchive: () => void
   showStreak: boolean
 }) {
-  const today     = toDateKey(new Date().toISOString())
-  const todayLog  = logs.find(l => l.habitId === habit.id && toDateKey(l.completedAt) === today)
-  const doneToday = !!todayLog
+  const selectedLog = logs.find(
+    (l) => l.habitId === habit.id && toDateKey(l.completedAt) === selectedDateKey,
+  )
 
   const last7 = showStreak
+
+
     ? Array.from({ length: 7 }, (_, i) => {
         const d = new Date()
         d.setDate(d.getDate() - (6 - i))
@@ -221,24 +240,35 @@ function HabitRow({
 
   return (
     <div className="habit-row-card" onClick={onEdit} role="button" tabIndex={0}>
-
-
       <button
-        className={`habit-check ${doneToday ? 'done' : ''}`}
-        style={{ borderColor: habit.color, background: doneToday ? habit.color : 'transparent' }}
-        onClick={(e) => { e.stopPropagation(); onToggle(habit.id, today) }}
-        title={doneToday ? 'Mark undone' : 'Mark done'}
+        className={`habit-check ${selectedLog ? 'done' : ''}`}
+        style={{ borderColor: habit.color, background: selectedLog ? habit.color : 'transparent' }}
+        onClick={(e) => { e.stopPropagation(); onToggle(habit.id, selectedDateKey) }}
+        title={selectedLog ? 'Mark undone' : 'Mark done'}
       >
-        {doneToday && <IconCheck />}
+        {selectedLog && <IconCheck />}
       </button>
 
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <p className="item-name">{habit.name}</p>
-        <p className="item-sub">
-          {habit.frequency}
-          {habit.quota && ` · ${habit.quota.target}${habit.quota.unit ? ` ${habit.quota.unit}` : ''}`}
-          {todayLog?.value !== undefined && ` · Done: ${todayLog.value}${habit.quota?.unit ? ` ${habit.quota.unit}` : ''}`}
-        </p>
+
+      <div className="habit-row-main">
+        <div className="habit-row-header">
+
+          <p className="item-name">{habit.name}</p>
+          <div className="habit-meta">
+            <span>{habit.frequency}</span>
+            {habit.quota && (
+              <span className="meta-chip">
+                {habit.quota.target}{habit.quota.unit ? ` ${habit.quota.unit}` : ''}
+              </span>
+            )}
+            {selectedLog?.value !== undefined && (
+              <span className="meta-chip done-chip">
+                Done: {selectedLog.value}{habit.quota?.unit ? ` ${habit.quota.unit}` : ''}
+              </span>
+            )}
+
+          </div>
+        </div>
       </div>
 
       {last7 && (
@@ -267,7 +297,6 @@ function HabitRow({
         </button>
       </div>
     </div>
-
   )
 }
 
@@ -282,7 +311,8 @@ export default function Habits() {
 
   type HabitOrderByTag = Record<string, string[]>
 
-  const [tagOrder, setTagOrder] = useState<string[]>(() => {
+  const [tagOrder] = useState<string[]>(() => {
+
     try {
       const raw = localStorage.getItem(TAG_ORDER_KEY)
       if (!raw) return []
@@ -293,7 +323,7 @@ export default function Habits() {
     }
   })
 
-  const [habitOrderByTag, setHabitOrderByTag] = useState<HabitOrderByTag>(() => {
+  const [habitOrderByTag] = useState<HabitOrderByTag>(() => {
     try {
       const raw = localStorage.getItem(HABIT_ORDER_KEY)
       if (!raw) return {}
@@ -308,12 +338,18 @@ export default function Habits() {
     localStorage.setItem(TAG_ORDER_KEY, JSON.stringify(tagOrder))
   }, [tagOrder])
 
+  // Persisted for future UI ordering; currently not used.
   useEffect(() => {
     localStorage.setItem(HABIT_ORDER_KEY, JSON.stringify(habitOrderByTag))
   }, [habitOrderByTag])
 
 
+
+
   const [habits,  setHabits]  = useState<Habit[]>([])
+  const [habitSort, setHabitSort] = useState(() => {
+    return localStorage.getItem(HABIT_SORT_KEY) || 'name'
+  })
 
 
   // Warn about missing tags during development
@@ -329,10 +365,16 @@ export default function Habits() {
   const [logs,    setLogs]    = useState<HabitLog[]>([])
   const [loading, setLoading] = useState(true)
   const [modal,   setModal]   = useState<'new' | Habit | null>(null)
+  const [logHabitOpen, setLogHabitOpen] = useState(false)
+  const [selectedPastDateKey, setSelectedPastDateKey] = useState<string>(() => new Date().toISOString().slice(0, 10))
+
   const [deleteHabitId, setDeleteHabitId] = useState<string | null>(null)
+
   const [deleteHabitName, setDeleteHabitName] = useState<string>('')
 
-  const [valueModalHabit, setValueModalHabit] = useState<Habit | null>(null)
+  const [valueModalTarget, setValueModalTarget] = useState<{ habit: Habit; dateKey: string } | null>(null)
+
+
 
   // Tag filter state
   const [selectedTags, setSelectedTags] = useState<string[]>([])
@@ -349,10 +391,11 @@ export default function Habits() {
   // }
 
   const displayedHabits = useMemo(() => {
-    return selectedTags.length === 0 
+    const filtered = selectedTags.length === 0 
       ? habits 
       : habits.filter(h => selectedTags.every(tag => getTags(h).includes(tag)))
-  }, [habits, selectedTags])
+    return sortHabits(filtered, habitSort)
+  }, [habits, selectedTags, habitSort])
 
   const filteredLogs = useMemo(() => {
     if (selectedTags.length === 0) return logs
@@ -361,7 +404,14 @@ export default function Habits() {
 
   // Heatmap filter state
   const [filterMode, setFilterMode] = useState<'all' | 'none' | string>('all')
-  const effectiveFilterHabitIds = filterMode === 'all' ? displayedHabits.map(h => h.id) : filterMode === 'none' ? [] : [filterMode as string].filter(id => displayedHabits.some(h => h.id === id))
+const effectiveFilterHabitIds =
+    filterMode === 'all'
+      ? displayedHabits.map((h: Habit) => h.id)
+      : filterMode === 'none'
+        ? []
+        : [filterMode as string].filter(id =>
+            displayedHabits.some((h: Habit) => h.id === id),
+          )
 
   const [isMobile, setIsMobile] = useState(false)
 
@@ -379,8 +429,9 @@ export default function Habits() {
       db.habits.toArray(),
       db.habitLogs.toArray(),
     ])
-    setHabits(h.filter(x => !x.archivedAt))
-    setArchivedHabits(h.filter(x => x.archivedAt))
+    setHabits(h.filter(hb => !hb.archivedAt))
+    setArchivedHabits(h.filter(hb => hb.archivedAt !== undefined))
+
     setLogs(l)
     setLoading(false)
   }
@@ -406,7 +457,9 @@ export default function Habits() {
   }
 
   async function unarchiveHabit(habit: Habit) {
-    const { archivedAt, ...rest } = habit
+    // Drop archivedAt field while keeping the rest of the habit.
+    const rest = { ...habit } as Omit<Habit, 'archivedAt'>
+    delete (rest as unknown as { archivedAt?: unknown }).archivedAt
     await sync.put('habits', rest as unknown as Record<string, unknown>)
     reload()
   }
@@ -426,12 +479,18 @@ export default function Habits() {
       .first()
 
     if (existing) {
-      await sync.delete('habitLogs', existing.id)
+      if (value === undefined) {
+        await sync.delete('habitLogs', existing.id)
+      } else {
+        await sync.put('habitLogs', { ...existing, value } as unknown as Record<string, unknown>)
+      }
     } else {
+      // Store a completedAt at midday to avoid timezone-caused date shifts
+      const completedAt = new Date(date + 'T12:00:00').toISOString()
       const log: HabitLog = {
         id:          generateId(),
         habitId,
-        completedAt: new Date().toISOString(),
+        completedAt,
         value,
       }
       await sync.put('habitLogs', log as unknown as Record<string, unknown>)
@@ -451,39 +510,88 @@ export default function Habits() {
     }
 
     if (habit.quota) {
-      // Prompt for value
-      setValueModalHabit(habit)
+      setValueModalTarget({ habit, dateKey: date })
     } else {
-      // Simple toggle
       toggleHabit(habitId, date)
     }
   }
 
-  function handleValueSave(value: number) {
-    if (!valueModalHabit) return
-    const today = toDateKey(new Date().toISOString())
-    toggleHabit(valueModalHabit.id, today, value)
-    setValueModalHabit(null)
+
+
+  function handleSelectDateFromHeatmap(dateKey: string) {
+    setSelectedPastDateKey(dateKey)
   }
+
+  function handleHeatmapEdit(habitId: string, dateKey: string) {
+    const habit = habits.find(h => h.id === habitId)
+    if (!habit) return
+
+    // Editing a historical day should open the same “log” UX as the row toggle.
+    // - quota habits: open LogHabitQuotaModal / HabitValueModal
+    // - non-quota habits: toggle immediately
+    if (habit.quota) {
+      setSelectedPastDateKey(dateKey)
+      setValueModalTarget({ habit, dateKey })
+    } else {
+      setSelectedPastDateKey(dateKey)
+      handleToggle(habitId, dateKey)
+    }
+  }
+
+  async function handleValueSave(value: number) {
+    if (!valueModalTarget) return
+    await toggleHabit(valueModalTarget.habit.id, valueModalTarget.dateKey, value)
+    setValueModalTarget(null)
+  }
+
+
 
   if (loading) return <div className="page-loading">Loading…</div>
 
   const today     = toDateKey(new Date().toISOString())
   // const todayLogs = logs.filter(l => toDateKey(l.completedAt) === today)
 
+
   return (
     <div className="page">
       <div className="page-header">
         <h1>Habits</h1>
-        <p className="page-sub">{logs.filter(l => toDateKey(l.completedAt) === today && displayedHabits.some(h => h.id === l.habitId)).length}/{displayedHabits.length} done today</p>
+<p className="page-sub">{logs.filter(l => toDateKey(l.completedAt) === today && displayedHabits.some((h: Habit) => h.id === l.habitId)).length}/{displayedHabits.length} done today</p>
       </div>
 
-      <div className="section-header">
+      <div className="section-header" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <span />
+        <div style={{ flex: 1 }} />
+        <label style={{ fontSize: 13, color: 'var(--text-dim)', display: 'flex', alignItems: 'center', gap: 6 }}>
+          Sort:
+          <select
+            className="field"
+            style={{ fontSize: 13, padding: '4px 8px' }}
+            value={habitSort}
+            onChange={e => {
+              setHabitSort(e.target.value)
+              localStorage.setItem(HABIT_SORT_KEY, e.target.value)
+            }}
+          >
+            {HABIT_SORT_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </label>
         <button className="btn btn-primary" onClick={() => setModal('new')}>
           <IconPlus /> New habit
         </button>
+
+        <button
+          className="btn btn-secondary"
+          onClick={() => setLogHabitOpen(true)}
+          style={{ whiteSpace: 'nowrap' }}
+        >
+          + Log for a past day
+        </button>
+
       </div>
+
 
       {/* Tag Filter UI */}
       {allTags.length > 0 && (
@@ -551,6 +659,7 @@ export default function Habits() {
             key={h.id}
             habit={h}
             logs={logs}
+            selectedDateKey={selectedPastDateKey}
             onToggle={handleToggle}
             onEdit={() => setModal(h)}
             onArchive={() => archiveHabit(h)}
@@ -559,13 +668,15 @@ export default function Habits() {
         ))
       )}
 
+
       {/* Habit Heatmap Section */}
       {habits.length > 0 && (
         <section className="card heatmap-card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 12 }}>
             <h2 className="card-title">Habit heatmap</h2>
             <select 
               value={filterMode}
+
               onChange={(e) => setFilterMode(e.target.value as 'all' | 'none' | string)}
               className="field"
               style={{ fontSize: 13, padding: '6px 10px' }}
@@ -576,9 +687,16 @@ export default function Habits() {
               <option key={h.id} value={h.id}>{h.name}</option>
             ))}
           </select>
-        </div>
+          </div>
 
-          <HabitHeatmap habits={displayedHabits} logs={filteredLogs} filterHabitIds={effectiveFilterHabitIds} />
+          <HabitHeatmap
+            habits={displayedHabits}
+            logs={filteredLogs}
+            filterHabitIds={effectiveFilterHabitIds}
+            selectedDateKey={selectedPastDateKey}
+            onSelectDate={handleSelectDateFromHeatmap}
+            onToggle={handleHeatmapEdit}
+          />
         </section>
       )}
 
@@ -641,13 +759,26 @@ export default function Habits() {
         />
       )}
 
-      {valueModalHabit && (
+      {valueModalTarget && (
         <HabitValueModal
-          habitName={valueModalHabit.name}
-          quotaType={valueModalHabit.quota!.type}
-          unit={valueModalHabit.quota!.unit}
+          habitName={valueModalTarget.habit.name}
+          quotaType={valueModalTarget.habit.quota!.type}
+          unit={valueModalTarget.habit.quota!.unit}
           onSave={handleValueSave}
-          onClose={() => setValueModalHabit(null)}
+          onClose={() => setValueModalTarget(null)}
+        />
+      )}
+
+
+      {logHabitOpen && (
+        <LogHabitModal
+          habits={displayedHabits}
+            initialDateKey={selectedPastDateKey}
+
+          onClose={() => setLogHabitOpen(false)}
+          onSave={async ({ habitId, dateKey, value }) => {
+            await toggleHabit(habitId, dateKey, value)
+          }}
         />
       )}
 
@@ -664,6 +795,7 @@ export default function Habits() {
           isDangerous
         />
       )}
+
     </div>
   )
 }
