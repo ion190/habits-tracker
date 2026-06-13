@@ -32,8 +32,29 @@ function getCls(day: DayData): string {
 }
 
 function Tooltip({ day, x, y }: { day: DayData; x: number; y: number }) {
+  const TOOLTIP_W = 280
+  const TOOLTIP_H = 240
+  const padding = 12
+
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 375
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 667
+
+  let left = x + 12
+  let top = y - 12
+
+  if (top + TOOLTIP_H + padding > vh) {
+    top = y + 12
+  }
+
+  left = Math.min(Math.max(left, padding), vw - TOOLTIP_W - padding)
+  top = Math.min(Math.max(top, padding), vh - TOOLTIP_H - padding)
+
   const style: CSSProperties = {
-    position: 'fixed', left: x + 12, top: y - 12, zIndex: 9999, pointerEvents: 'none',
+    position: 'fixed',
+    left,
+    top,
+    zIndex: 9999,
+    pointerEvents: 'none',
   }
   const dateStr = new Date(day.date + 'T00:00:00').toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',

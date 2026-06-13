@@ -1,29 +1,13 @@
 import { useEffect, useState, useMemo } from 'react'
-// --- Habit sorting helpers ---
-const HABIT_SORT_KEY = 'habitsSortOrder'
-const HABIT_SORT_OPTIONS = [
-  { value: 'name', label: 'Name (A-Z)' },
-  { value: 'created', label: 'Created (Newest)' },
-  { value: 'color', label: 'Color' },
-  { value: 'frequency', label: 'Frequency' },
-]
 
-export function sortHabits(
-  habits: Habit[],
-  sortOrder: 'name' | 'created' | 'color' | 'frequency' | string,
-) {
-  if (sortOrder === 'name') {
-    return [...habits].sort((a, b) => a.name.localeCompare(b.name))
-  } else if (sortOrder === 'created') {
-    return [...habits].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
-  } else if (sortOrder === 'color') {
-    return [...habits].sort((a, b) => (a.color || '').localeCompare(b.color || ''))
-  } else if (sortOrder === 'frequency') {
-    return [...habits].sort((a, b) => (a.frequency || '').localeCompare(b.frequency || ''))
-  }
-  return habits
-}
+import {
+  HABIT_SORT_KEY,
+  HABIT_SORT_OPTIONS,
+  sortHabits,
+} from './habits/sortHabits.ts'
+
 import { db, generateId } from '../db/database'
+
 import { sync } from '../db/sync'
 import type { Habit, HabitLog } from '../db/database'
 import Modal from '../components/Modal'
@@ -223,20 +207,29 @@ function HabitModal({
 // ── Habit row ─────────────────────────────────────────────
 
 function HabitRow({
-  habit, logs, onToggle, onEdit, onArchive, showStreak
+  habit,
+  logs,
+  selectedDateKey,
+  onToggle,
+  onEdit,
+  onArchive,
+  showStreak,
 }: {
   habit: Habit
   logs: HabitLog[]
+  selectedDateKey: string
   onToggle: (habitId: string, date: string) => void
   onEdit: () => void
   onArchive: () => void
   showStreak: boolean
 }) {
-  const today     = toDateKey(new Date().toISOString())
-  const todayLog  = logs.find(l => l.habitId === habit.id && toDateKey(l.completedAt) === today)
-  const doneToday = !!todayLog
+  const selectedLog = logs.find(
+    (l) => l.habitId === habit.id && toDateKey(l.completedAt) === selectedDateKey,
+  )
 
   const last7 = showStreak
+
+
     ? Array.from({ length: 7 }, (_, i) => {
         const d = new Date()
         d.setDate(d.getDate() - (6 - i))
@@ -248,16 +241,18 @@ function HabitRow({
   return (
     <div className="habit-row-card" onClick={onEdit} role="button" tabIndex={0}>
       <button
-        className={`habit-check ${doneToday ? 'done' : ''}`}
-        style={{ borderColor: habit.color, background: doneToday ? habit.color : 'transparent' }}
-        onClick={(e) => { e.stopPropagation(); onToggle(habit.id, today) }}
-        title={doneToday ? 'Mark undone' : 'Mark done'}
+        className={`habit-check ${selectedLog ? 'done' : ''}`}
+        style={{ borderColor: habit.color, background: selectedLog ? habit.color : 'transparent' }}
+        onClick={(e) => { e.stopPropagation(); onToggle(habit.id, selectedDateKey) }}
+        title={selectedLog ? 'Mark undone' : 'Mark done'}
       >
-        {doneToday && <IconCheck />}
+        {selectedLog && <IconCheck />}
       </button>
+
 
       <div className="habit-row-main">
         <div className="habit-row-header">
+
           <p className="item-name">{habit.name}</p>
           <div className="habit-meta">
             <span>{habit.frequency}</span>
@@ -266,11 +261,12 @@ function HabitRow({
                 {habit.quota.target}{habit.quota.unit ? ` ${habit.quota.unit}` : ''}
               </span>
             )}
-            {todayLog?.value !== undefined && (
+            {selectedLog?.value !== undefined && (
               <span className="meta-chip done-chip">
-                Done: {todayLog.value}{habit.quota?.unit ? ` ${habit.quota.unit}` : ''}
+                Done: {selectedLog.value}{habit.quota?.unit ? ` ${habit.quota.unit}` : ''}
               </span>
             )}
+
           </div>
         </div>
       </div>
@@ -315,7 +311,8 @@ export default function Habits() {
 
   type HabitOrderByTag = Record<string, string[]>
 
-  const [tagOrder, setTagOrder] = useState<string[]>(() => {
+  const [tagOrder] = useState<string[]>(() => {
+
     try {
       const raw = localStorage.getItem(TAG_ORDER_KEY)
       if (!raw) return []
@@ -326,7 +323,7 @@ export default function Habits() {
     }
   })
 
-  const [habitOrderByTag, setHabitOrderByTag] = useState<HabitOrderByTag>(() => {
+  const [habitOrderByTag] = useState<HabitOrderByTag>(() => {
     try {
       const raw = localStorage.getItem(HABIT_ORDER_KEY)
       if (!raw) return {}
@@ -345,6 +342,7 @@ export default function Habits() {
   useEffect(() => {
     localStorage.setItem(HABIT_ORDER_KEY, JSON.stringify(habitOrderByTag))
   }, [habitOrderByTag])
+
 
 
 
@@ -368,8 +366,10 @@ export default function Habits() {
   const [loading, setLoading] = useState(true)
   const [modal,   setModal]   = useState<'new' | Habit | null>(null)
   const [logHabitOpen, setLogHabitOpen] = useState(false)
+  const [selectedPastDateKey, setSelectedPastDateKey] = useState<string>(() => new Date().toISOString().slice(0, 10))
 
   const [deleteHabitId, setDeleteHabitId] = useState<string | null>(null)
+
   const [deleteHabitName, setDeleteHabitName] = useState<string>('')
 
   const [valueModalTarget, setValueModalTarget] = useState<{ habit: Habit; dateKey: string } | null>(null)
@@ -429,8 +429,9 @@ const effectiveFilterHabitIds =
       db.habits.toArray(),
       db.habitLogs.toArray(),
     ])
-    setHabits(h.filter(x => !x.archivedAt))
-    setArchivedHabits(h.filter(x => x.archivedAt))
+    setHabits(h.filter(hb => !hb.archivedAt))
+    setArchivedHabits(h.filter(hb => hb.archivedAt !== undefined))
+
     setLogs(l)
     setLoading(false)
   }
@@ -456,7 +457,9 @@ const effectiveFilterHabitIds =
   }
 
   async function unarchiveHabit(habit: Habit) {
-    const { archivedAt, ...rest } = habit
+    // Drop archivedAt field while keeping the rest of the habit.
+    const rest = { ...habit } as Omit<Habit, 'archivedAt'>
+    delete (rest as unknown as { archivedAt?: unknown }).archivedAt
     await sync.put('habits', rest as unknown as Record<string, unknown>)
     reload()
   }
@@ -513,9 +516,26 @@ const effectiveFilterHabitIds =
     }
   }
 
-  function handleToggleFromHeatmap(habitId: string, date: string) {
-    // Same behavior as the row toggle: toggle historical day.
-    handleToggle(habitId, date)
+
+
+  function handleSelectDateFromHeatmap(dateKey: string) {
+    setSelectedPastDateKey(dateKey)
+  }
+
+  function handleHeatmapEdit(habitId: string, dateKey: string) {
+    const habit = habits.find(h => h.id === habitId)
+    if (!habit) return
+
+    // Editing a historical day should open the same “log” UX as the row toggle.
+    // - quota habits: open LogHabitQuotaModal / HabitValueModal
+    // - non-quota habits: toggle immediately
+    if (habit.quota) {
+      setSelectedPastDateKey(dateKey)
+      setValueModalTarget({ habit, dateKey })
+    } else {
+      setSelectedPastDateKey(dateKey)
+      handleToggle(habitId, dateKey)
+    }
   }
 
   async function handleValueSave(value: number) {
@@ -639,6 +659,7 @@ const effectiveFilterHabitIds =
             key={h.id}
             habit={h}
             logs={logs}
+            selectedDateKey={selectedPastDateKey}
             onToggle={handleToggle}
             onEdit={() => setModal(h)}
             onArchive={() => archiveHabit(h)}
@@ -647,6 +668,7 @@ const effectiveFilterHabitIds =
         ))
       )}
 
+
       {/* Habit Heatmap Section */}
       {habits.length > 0 && (
         <section className="card heatmap-card">
@@ -654,6 +676,7 @@ const effectiveFilterHabitIds =
             <h2 className="card-title">Habit heatmap</h2>
             <select 
               value={filterMode}
+
               onChange={(e) => setFilterMode(e.target.value as 'all' | 'none' | string)}
               className="field"
               style={{ fontSize: 13, padding: '6px 10px' }}
@@ -670,7 +693,9 @@ const effectiveFilterHabitIds =
             habits={displayedHabits}
             logs={filteredLogs}
             filterHabitIds={effectiveFilterHabitIds}
-            onToggle={handleToggleFromHeatmap}
+            selectedDateKey={selectedPastDateKey}
+            onSelectDate={handleSelectDateFromHeatmap}
+            onToggle={handleHeatmapEdit}
           />
         </section>
       )}
@@ -748,7 +773,8 @@ const effectiveFilterHabitIds =
       {logHabitOpen && (
         <LogHabitModal
           habits={displayedHabits}
-          initialDateKey={toDateKey(new Date().toISOString())}
+            initialDateKey={selectedPastDateKey}
+
           onClose={() => setLogHabitOpen(false)}
           onSave={async ({ habitId, dateKey, value }) => {
             await toggleHabit(habitId, dateKey, value)

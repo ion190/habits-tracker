@@ -10,9 +10,12 @@ import type { Habit } from '../db/database'
 interface Props {
   habits: Habit[]
   initialDateKey?: string
+  // Existing logs (for initialDateKey) to prefill selection & values.
+  existingLogs?: { habitId: string; value?: number }[]
   onClose: () => void
   onSave: (payload: { habitId: string; dateKey: string; value?: number }) => void
 }
+
 
 interface HabitState {
   selected: boolean
@@ -21,14 +24,22 @@ interface HabitState {
 
 type HabitStates = Record<string, HabitState>
 
-export default function LogHabitModal({ habits, initialDateKey, onClose, onSave }: Props) {
+export default function LogHabitModal({ habits, initialDateKey, existingLogs, onClose, onSave }: Props) {
   const [dateKey, setDateKey] = useState(initialDateKey ?? new Date().toISOString().slice(0, 10))
-  const [habitStates, setHabitStates] = useState<HabitStates>(() =>
-    habits.reduce((acc, habit) => {
-      acc[habit.id] = { selected: false, value: '' }
+  const [habitStates, setHabitStates] = useState<HabitStates>(() => {
+    const prefill = new Map<string, { value?: number }>()
+    ;(existingLogs ?? []).forEach(l => prefill.set(l.habitId, { value: l.value }))
+
+    return habits.reduce((acc, habit) => {
+      const existing = prefill.get(habit.id)
+      acc[habit.id] = {
+        selected: !!existing,
+        value: existing?.value !== undefined ? String(existing.value) : '',
+      }
       return acc
-    }, {} as HabitStates),
-  )
+    }, {} as HabitStates)
+  })
+
 
   const selectedHabits = useMemo(
     () => habits.filter(habit => habitStates[habit.id]?.selected),

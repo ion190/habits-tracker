@@ -2,7 +2,8 @@ import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { db, generateId, dateKeyForPeriod } from '../db/database'
 import type { CalendarActivity, CompletedWorkSession, WorkSessionCategory, JournalEntry, Habit, HabitLog, CompletedWorkout, Task } from '../db/database'
-import { sortHabits } from './Habits'
+import { sortHabits } from './habits/sortHabits'
+
 const HABIT_SORT_KEY = 'habitsSortOrder'
 import { formatDuration, toDateKey, startOfWeek, isTaskDueOnDate, getPastTags } from '../utils'
 
@@ -355,23 +356,35 @@ export default function Dashboard() {
       setTomorrowKey(tomorrowKeyLocal)
 
       const todaysAll = acts.filter((a: CalendarActivity) => a.date === todayKeyLocal)
-      
-      // Split today's into past/completed vs future
+
+      // Split today's into future vs past vs ongoing.
+      // Include in-progress activities (start <= now <= end), which were previously dropped.
       const futureTodays = todaysAll.filter((a: CalendarActivity) => {
         const startDateTime = new Date(todayKeyLocal + 'T' + a.startTime + ':00')
         return startDateTime > now
       })
+
       const pastTodays = todaysAll.filter((a: CalendarActivity) => {
         const endDateTime = new Date(todayKeyLocal + 'T' + a.endTime + ':00')
         return endDateTime < now
       })
-      
+
+      const ongoingTodays = todaysAll.filter((a: CalendarActivity) => {
+        const startDateTime = new Date(todayKeyLocal + 'T' + a.startTime + ':00')
+        const endDateTime = new Date(todayKeyLocal + 'T' + a.endTime + ':00')
+        return startDateTime <= now && endDateTime >= now
+      })
+
       const tomorrowActs = acts.filter((a: CalendarActivity) => a.date === tomorrowKeyLocal)
-      setTodaysActivities([...futureTodays, ...pastTodays]) // Future first
+
+      // Future first, then ongoing, then past
+      setTodaysActivities([...futureTodays, ...ongoingTodays, ...pastTodays])
       setTodaysFutureActivities(futureTodays)
       setTomorrowActivities(tomorrowActs)
+
       const jEntry = await db.journalEntries.filter(e => e.period === 'daily' && e.dateKey === todayKeyLocal).first()
       setTodayJournal(jEntry ?? null)
+
 
       const thisWeekWorkouts = w.filter((x: CompletedWorkout) => new Date(x.startedAt) >= weekStart)
 

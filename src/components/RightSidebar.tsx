@@ -4,7 +4,8 @@ import { db, generateId } from '../db/database'
 import StartWorkoutModal from './StartWorkoutModal'
 import StartWorkSessionModal from './StartWorkSessionModal'
 import type { Habit, HabitLog, Task, CalendarActivity, JournalEntry } from '../db/database'
-import { sortHabits } from '../pages/Habits'
+import { sortHabits } from '../pages/habits/sortHabits'
+
 const HABIT_SORT_KEY = 'habitsSortOrder'
 import { toDateKey, isTaskDueOnDate } from '../utils'
 
