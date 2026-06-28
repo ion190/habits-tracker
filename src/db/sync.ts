@@ -23,11 +23,25 @@ const dexieTables: Record<string, Table> = {
 
 type SyncStatus = 'synced' | 'offline' | 'syncing' | 'error'
 
-// Firestore rejects fields with `undefined` values — remove them before writing
+// Firestore rejects fields with `undefined` values — remove them before writing.
+// Must be DEEP: nested objects like `recurrence: { endDate: undefined }` also
+// cause Firestore writes to fail and get silently swallowed by the catch block.
 function stripUndefined(obj: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(obj).filter(([, v]) => v !== undefined)
-  )
+  const result: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(obj)) {
+    if (value === undefined) continue
+    if (Array.isArray(value)) {
+      // Filter undefined slots from arrays, recurse into object elements
+      result[key] = value
+        .filter(v => v !== undefined)
+        .map(v => (v !== null && typeof v === 'object' ? stripUndefined(v as Record<string, unknown>) : v))
+    } else if (value !== null && typeof value === 'object') {
+      result[key] = stripUndefined(value as Record<string, unknown>)
+    } else {
+      result[key] = value
+    }
+  }
+  return result
 }
 
 class SyncEngine {

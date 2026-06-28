@@ -118,6 +118,10 @@ export default function Tasks() {
     setImportance('medium')
     setTags([])
     setTagInput('')
+    setRepeatEnabled(false)
+    setRepeatPattern('weekly')
+    setRepeatTargetDays([1, 3, 5])
+    setRepeatEndDate('')
     setShowModal(true)
   }
 
@@ -125,11 +129,24 @@ export default function Tasks() {
     setEditingTask(task)
     setTitle(task.title)
     setDescription(task.description ?? '')
-    setDueDate(task.dueDate ?? '')
+    setDueDate(task.dueDate ? task.dueDate.slice(0, 10) : '')
     setUrgency(task.urgency)
     setImportance(task.importance)
     setTags(task.tags ?? [])
     setTagInput('')
+
+    if (task.recurrence) {
+      setRepeatEnabled(true)
+      setRepeatPattern(task.recurrence.pattern)
+      setRepeatTargetDays(task.recurrence.targetDays ?? [1, 3, 5])
+      setRepeatEndDate(task.recurrence.endDate ?? '')
+    } else {
+      setRepeatEnabled(false)
+      setRepeatPattern('weekly')
+      setRepeatTargetDays([1, 3, 5])
+      setRepeatEndDate('')
+    }
+
     setShowModal(true)
   }
 
@@ -205,6 +222,15 @@ export default function Tasks() {
   const not_urgent_important = displayedTasks.filter(t => t.urgency === 'low' && t.importance === 'high')
   const urgent_not_important = displayedTasks.filter(t => t.urgency === 'high' && t.importance === 'low')
   const not_urgent_not_important = displayedTasks.filter(t => t.urgency === 'low' && t.importance === 'low')
+
+  // Recurring tasks — all active tasks that have a recurrence definition
+  const recurringTasks = tasks.filter(t => !!t.recurrence)
+
+  // Recurring tasks respecting the active tag filter
+  const displayedRecurringTasks = useMemo(() => {
+    if (selectedTags.length === 0) return recurringTasks
+    return recurringTasks.filter(t => selectedTags.every(tag => t.tags?.includes(tag)))
+  }, [recurringTasks, selectedTags])
 
   // All tasks list - above heatmap
   const selectedTask = selectedTaskId ? tasks.find(t => t.id === selectedTaskId) : null
@@ -352,17 +378,24 @@ export default function Tasks() {
                         </span>
                       ))}
                     </div>
-                    {task.dueDate && (
-                      <p style={{ margin: 0, fontSize: 11, color: 'var(--text-dim)' }}>
-                        Due: {formatDateOnlyGMT3(task.dueDate)}
-                      </p>
-                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2, flexWrap: 'wrap' }}>
+                      {task.dueDate && (
+                        <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>
+                          Due: {formatDateOnlyGMT3(task.dueDate)}
+                        </span>
+                      )}
+                      {task.recurrence && (
+                        <span style={{ fontSize: 10, padding: '1px 6px', background: 'var(--accent-bg)', color: 'var(--accent)', borderRadius: 10, fontWeight: 600 }}>
+                          ↻ {task.recurrence.pattern}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div style={{ display: 'flex', gap: 4, minWidth: 80, justifyContent: 'flex-end' }}>
                     <button
                       className="btn btn-sm btn-ghost"
                       onClick={(e) => { e.stopPropagation(); completeTask(task) }}
-                      title="Mark complete"
+                      title="Mark complete (this occurrence)"
                       style={{ fontSize: 14 }}
                     >
                       ✓
@@ -381,6 +414,105 @@ export default function Tasks() {
           )}
         </div>
       </section>
+
+      {/* Recurring Tasks section */}
+      {displayedRecurringTasks.length > 0 && (
+        <section className="card" style={{ marginBottom: 20 }}>
+          <h2 className="card-title" style={{ marginBottom: 12 }}>Recurring Tasks ({displayedRecurringTasks.length})</h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {displayedRecurringTasks.map(task => {
+              const rec = task.recurrence!
+              const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+              const scheduleLabel = rec.pattern === 'weekly' || rec.pattern === 'custom'
+                ? (rec.targetDays && rec.targetDays.length > 0
+                    ? rec.targetDays.map(d => dayNames[d]).join(', ')
+                    : rec.pattern)
+                : rec.pattern.charAt(0).toUpperCase() + rec.pattern.slice(1)
+              return (
+                <div
+                  key={task.id}
+                  id={`task-${task.id}`}
+                  style={{
+                    background: 'var(--card-bg)',
+                    border: `2px solid ${task.id === selectedTaskId ? 'var(--accent)' : 'var(--card-border)'}`,
+                    borderRadius: 8,
+                    padding: 12,
+                    cursor: 'pointer',
+                    boxShadow: task.id === selectedTaskId ? '0 0 0 3px rgba(59, 130, 246, 0.1)' : 'none',
+                    transition: 'all 0.2s',
+                  }}
+                  onClick={() => {
+                    if (task.id === selectedTaskId) {
+                      setSearchParams({})
+                    } else {
+                      setSearchParams({ taskId: task.id })
+                    }
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                        <p style={{
+                          margin: 0,
+                          fontSize: 14,
+                          fontWeight: 600,
+                          color: task.id === selectedTaskId ? 'var(--accent)' : 'var(--text)',
+                        }}>
+                          {task.title}
+                        </p>
+                        <span style={{ fontSize: 10, padding: '2px 7px', background: 'var(--accent-bg)', color: 'var(--accent)', borderRadius: 10, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                          ↻ {scheduleLabel}
+                        </span>
+                      </div>
+                      {task.description && (
+                        <p style={{ margin: '0 0 6px 0', fontSize: 12, color: 'var(--text-dim)' }}>
+                          {task.description}
+                        </p>
+                      )}
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+                        {task.tags?.map(tag => (
+                          <span key={tag} style={{ fontSize: 11, padding: '2px 6px', background: 'var(--accent-bg)', borderRadius: 4, color: 'var(--accent)' }}>
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 11, color: 'var(--text-dim)' }}>
+                        {task.dueDate && <span>Anchor: {formatDateOnlyGMT3(task.dueDate)}</span>}
+                        {rec.endDate && <span>Until: {formatDateOnlyGMT3(rec.endDate)}</span>}
+                        {task.completedAt && <span>Last done: {formatDateOnlyGMT3(task.completedAt)}</span>}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        onClick={(e) => { e.stopPropagation(); completeTask(task) }}
+                        title="Mark this occurrence done"
+                        style={{ fontSize: 14 }}
+                      >
+                        ✓
+                      </button>
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        onClick={(e) => { e.stopPropagation(); editTask(task) }}
+                        title="Edit"
+                      >
+                        ✎
+                      </button>
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        onClick={(e) => { e.stopPropagation(); archiveTask(task) }}
+                        title="Archive"
+                      >
+                        🗃
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )}
 
 
 
@@ -1225,4 +1357,3 @@ export default function Tasks() {
     </div>
   )
 }
-

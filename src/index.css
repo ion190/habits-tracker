@@ -158,9 +158,17 @@ a { color: inherit; text-decoration: none; }
   flex-direction: column;
   width: 100%;
   min-height: 100svh;
-  padding-top: 0;
+
+  /* Reserve iOS status bar / notch safe-area at the top so content
+     never starts underneath the system header area. */
+  padding-top: env(safe-area-inset-top);
+
+  padding-left: max(0px, env(safe-area-inset-left));
+  padding-right: max(0px, env(safe-area-inset-right));
+
   margin-top: var(--header-height, 0px);
 }
+
 
 
 .app-main {
@@ -172,9 +180,20 @@ a { color: inherit; text-decoration: none; }
 
 /* Mobile: avoid sidebar/nav overlap artifacts without disabling scrolling entirely */
 @media (max-width: 767px) {
+  /* hide scrollbars while keeping scrolling functional */
   html, body, #root {
     overflow-x: hidden !important;
+    scrollbar-width: none; /* Firefox */
   }
+
+  /* Chrome/Safari/Edge */
+  html::-webkit-scrollbar,
+  body::-webkit-scrollbar,
+  #root::-webkit-scrollbar {
+    width: 0 !important;
+    height: 0 !important;
+  }
+
 
   /* keep vertical scrolling controlled by .app-main (it already has overflow-y: auto) */
   .app-layout,
@@ -933,6 +952,36 @@ textarea.field { resize: vertical; }
   padding: 7px;
   border-radius: 7px;
 }
+/* ── Sort icon button ───────────────────────────────────── */
+.sort-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--code-bg);
+  color: var(--text);
+  font-size: 12px;
+  font-family: var(--sans);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.sort-icon-btn:hover {
+  border-color: var(--accent-border);
+  color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.sort-icon-btn svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
 
 /* Smaller ghost buttons used in task listing (Tasks page) */
 .btn-sm {
@@ -1027,13 +1076,13 @@ textarea.field { resize: vertical; }
 /* ── Habit row card ────────────────────────────────────── */
 .habit-row-card {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 14px;
-  padding: 14px 14px;
-  margin-bottom: 10px;
+  padding: 6px 6px;
+  /* margin-bottom: 10px; */
   transition: transform 0.15s, border-color 0.15s, background 0.15s;
   cursor: pointer;
 }
@@ -2120,7 +2169,11 @@ select.field {
   top: 0;
   left: 0;
   right: 0;
-  height: 50px;
+
+  /* Include safe-area so the header never overlaps the iOS system status bar. */
+  padding-top: env(safe-area-inset-top);
+  height: calc(50px + env(safe-area-inset-top));
+
   background: var(--bg);
   display: flex;
   align-items: center;
@@ -2129,6 +2182,7 @@ select.field {
   backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--border);
 }
+
 
 .header-timer {
   font-size: 2.5rem;
@@ -2185,7 +2239,7 @@ select.field {
 @media (max-width: 768px) {
   .header-timer { font-size: 2rem; }
   .header-navbar { height: 45px; }
-  .app-layout { padding-top: 45px; }
+  /* .app-layout { padding-top: 45px; } */
 }
 /* ── Journal heatmap dot ────────────────────────────────── */
 .hm-seg-journal {

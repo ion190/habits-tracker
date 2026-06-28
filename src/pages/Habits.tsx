@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import React, { useEffect, useState, useMemo } from 'react'
 
 import {
   HABIT_SORT_KEY,
@@ -30,11 +30,12 @@ const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
 // ── Create / Edit habit modal ─────────────────────────────
 
 function HabitModal({
-  initial, onSave, onClose
+  initial, onSave, onClose, onArchive
 }: {
   initial?: Habit
   onSave: (h: Habit) => void
   onClose: () => void
+  onArchive?: (h: Habit) => void
 }) {
   const [name,       setName]       = useState(initial?.name ?? '')
   const [color,      setColor]      = useState(initial?.color ?? COLORS[0])
@@ -195,9 +196,23 @@ function HabitModal({
           />
         </div>
 
-        <div className="form-actions">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={submit}>Save</button>
+        <div className="form-actions" style={{ justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {initial && onArchive && (
+              <button
+                className="btn btn-ghost"
+                style={{ color: 'var(--text-dim)' }}
+                onClick={() => { onArchive(initial); onClose() }}
+                title="Archive this habit"
+              >
+                <IconArchive /> Archive
+              </button>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary" onClick={submit}>Save</button>
+          </div>
         </div>
         </div>
     </Modal>
@@ -214,6 +229,7 @@ function HabitRow({
   onEdit,
   onArchive,
   showStreak,
+  periodDoneCount,
 }: {
   habit: Habit
   logs: HabitLog[]
@@ -222,6 +238,7 @@ function HabitRow({
   onEdit: () => void
   onArchive: () => void
   showStreak: boolean
+  periodDoneCount: number
 }) {
   const selectedLog = logs.find(
     (l) => l.habitId === habit.id && toDateKey(l.completedAt) === selectedDateKey,
@@ -255,7 +272,6 @@ function HabitRow({
 
           <p className="item-name">{habit.name}</p>
           <div className="habit-meta">
-            <span>{habit.frequency}</span>
             {habit.quota && (
               <span className="meta-chip">
                 {habit.quota.target}{habit.quota.unit ? ` ${habit.quota.unit}` : ''}
@@ -266,7 +282,26 @@ function HabitRow({
                 Done: {selectedLog.value}{habit.quota?.unit ? ` ${habit.quota.unit}` : ''}
               </span>
             )}
-
+            {periodDoneCount > 0 && (
+              <span
+                className="meta-chip"
+                title={
+                  habit.frequency === 'daily'
+                    ? `Done ${periodDoneCount}× today`
+                    : `Done ${periodDoneCount}× this ${habit.frequency === 'weekly' ? 'week' : 'period'}`
+                }
+                style={{
+                  background: 'var(--success-bg)',
+                  color: 'var(--success)',
+                  border: '1px solid var(--success-border)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 3,
+                }}
+              >
+                ✓{periodDoneCount > 1 ? ` ×${periodDoneCount}` : ''}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -287,15 +322,7 @@ function HabitRow({
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 6 }}>
-        <button
-          className="btn btn-ghost"
-          onClick={(e) => { e.stopPropagation(); onArchive() }}
-          title="Archive"
-        >
-          <IconArchive />
-        </button>
-      </div>
+
     </div>
   )
 }
@@ -378,11 +405,18 @@ export default function Habits() {
 
   // Tag filter state
   const [selectedTags, setSelectedTags] = useState<string[]>([])
+  const [selectedFreqs, setSelectedFreqs] = useState<string[]>([])
 
   const allTags = useMemo(() => {
     return Array.from(new Set(habits.flatMap(getTags)))
   }, [habits])
 
+  // All distinct frequencies that exist among active habits
+  const allFreqs = useMemo(() => {
+    const order: Record<string, number> = { daily: 0, weekly: 1, custom: 2 }
+    return Array.from(new Set(habits.map(h => h.frequency)))
+      .sort((a, b) => (order[a] ?? 9) - (order[b] ?? 9))
+  }, [habits])
 
   // function toggleTag(tag: string) {
   //   setSelectedTags(prev => 
@@ -391,16 +425,18 @@ export default function Habits() {
   // }
 
   const displayedHabits = useMemo(() => {
-    const filtered = selectedTags.length === 0 
-      ? habits 
-      : habits.filter(h => selectedTags.every(tag => getTags(h).includes(tag)))
+    let filtered = habits
+    if (selectedTags.length > 0)
+      filtered = filtered.filter(h => selectedTags.every(tag => getTags(h).includes(tag)))
+    if (selectedFreqs.length > 0)
+      filtered = filtered.filter(h => selectedFreqs.includes(h.frequency))
     return sortHabits(filtered, habitSort)
-  }, [habits, selectedTags, habitSort])
+  }, [habits, selectedTags, selectedFreqs, habitSort])
 
   const filteredLogs = useMemo(() => {
-    if (selectedTags.length === 0) return logs
-    return logs.filter(l => habits.some(h => selectedTags.some(tag => getTags(h).includes(tag)) && h.id === l.habitId))
-  }, [logs, habits, selectedTags])
+    if (selectedTags.length === 0 && selectedFreqs.length === 0) return logs
+    return logs.filter(l => displayedHabits.some(h => h.id === l.habitId))
+  }, [logs, displayedHabits, selectedTags, selectedFreqs])
 
   // Heatmap filter state
   const [filterMode, setFilterMode] = useState<'all' | 'none' | string>('all')
@@ -548,8 +584,27 @@ const effectiveFilterHabitIds =
 
   if (loading) return <div className="page-loading">Loading…</div>
 
-  const today     = toDateKey(new Date().toISOString())
-  // const todayLogs = logs.filter(l => toDateKey(l.completedAt) === today)
+  const today = toDateKey(new Date().toISOString())
+
+  // Period boundaries for "done this period" badge
+  const weekStart = (() => {
+    const d = new Date()
+    const day = d.getDay() // 0=Sun
+    const diff = day === 0 ? 6 : day - 1 // make Mon=0
+    d.setDate(d.getDate() - diff)
+    return toDateKey(d.toISOString())
+  })()
+
+  // How many times a habit was completed in its relevant period (today for daily, this week for weekly/custom)
+  function getPeriodDoneCount(habit: Habit): number {
+    return logs.filter(l => {
+      if (l.habitId !== habit.id) return false
+      const dk = toDateKey(l.completedAt)
+      if (habit.frequency === 'daily') return dk === today
+      // weekly / custom: count completions since start of this week
+      return dk >= weekStart && dk <= today
+    }).length
+  }
 
 
   return (
@@ -562,89 +617,111 @@ const effectiveFilterHabitIds =
       <div className="section-header" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <span />
         <div style={{ flex: 1 }} />
-        <label style={{ fontSize: 13, color: 'var(--text-dim)', display: 'flex', alignItems: 'center', gap: 6 }}>
-          Sort:
-          <select
-            className="field"
-            style={{ fontSize: 13, padding: '4px 8px' }}
-            value={habitSort}
-            onChange={e => {
-              setHabitSort(e.target.value)
-              localStorage.setItem(HABIT_SORT_KEY, e.target.value)
-            }}
-          >
-            {HABIT_SORT_OPTIONS.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-        </label>
+        <button
+          className="sort-icon-btn"
+          title="Cycle sort order"
+          onClick={() => {
+            const opts = HABIT_SORT_OPTIONS.map(o => o.value) as ReadonlyArray<(typeof HABIT_SORT_OPTIONS)[number]['value']>
+            const safeCurrent = (opts.includes(habitSort as (typeof HABIT_SORT_OPTIONS)[number]['value']) ? habitSort : 'name') as (typeof HABIT_SORT_OPTIONS)[number]['value']
+            const next = opts[(opts.indexOf(safeCurrent) + 1) % opts.length]
+            setHabitSort(next)
+            localStorage.setItem(HABIT_SORT_KEY, next)
+          }}
+        >
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2 4h8M2 8h5M2 12h3M11 6l2-2 2 2M13 4v8" />
+          </svg>
+          {HABIT_SORT_OPTIONS.find(o => o.value === habitSort)?.label ?? 'Sort'}
+        </button>
         <button className="btn btn-primary" onClick={() => setModal('new')}>
           <IconPlus /> New habit
         </button>
 
-        <button
+        {/* <button
           className="btn btn-secondary"
           onClick={() => setLogHabitOpen(true)}
           style={{ whiteSpace: 'nowrap' }}
         >
           + Log for a past day
-        </button>
+        </button> */}
 
       </div>
 
 
-      {/* Tag Filter UI */}
-      {allTags.length > 0 && (
-        <div className="card" style={{ marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>Filter by tags:</span>
-            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-              <span
-                style={{
-                  padding: '4px 8px',
-                  background: selectedTags.length === 0 ? 'var(--accent-bg)' : 'var(--bg)',
-                  border: `1px solid ${selectedTags.length === 0 ? 'var(--accent)' : 'var(--border)'}`,
-                  borderRadius: 6,
-                  fontSize: 12,
-                  cursor: 'pointer'
-                }}
-                onClick={() => setSelectedTags([])}
-              >
-                All ({habits.length})
-              </span>
-              {allTags.map(tag => (
+      {/* Filter bar — frequency chips + tag chips in one unified row */}
+      {(allFreqs.length > 1 || allTags.length > 0) && (
+        <div className="card" style={{ marginBottom: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+
+            {/* Frequency chips */}
+            {allFreqs.map(freq => {
+              const active = selectedFreqs.includes(freq)
+              const label = freq.charAt(0).toUpperCase() + freq.slice(1)
+              const count = habits.filter(h => h.frequency === freq).length
+              return (
                 <span
-                  key={tag}
+                  key={`freq-${freq}`}
                   style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    padding: '4px 8px',
-                    background: selectedTags.includes(tag) ? 'var(--accent-bg)' : 'var(--bg)',
-                    border: `1px solid ${selectedTags.includes(tag) ? 'var(--accent)' : 'var(--border)'}`,
-                    borderRadius: 6,
-                    fontSize: 12,
-                    cursor: 'pointer'
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                    padding: '4px 10px',
+                    background: active ? 'var(--accent-bg)' : 'var(--bg)',
+                    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                    borderRadius: 6, fontSize: 12, cursor: 'pointer',
+                    color: active ? 'var(--accent)' : 'var(--text)',
+                    fontStyle: 'italic',
                   }}
-                  onClick={() => {
-                    setSelectedTags(prev => 
-                      prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
-                    )
-                  }}
+                  onClick={() => setSelectedFreqs(prev =>
+                    prev.includes(freq) ? prev.filter(f => f !== freq) : [...prev, freq]
+                  )}
                 >
-                  {tag} ({habits.filter(h => getTags(h).includes(tag)).length})
-                  {selectedTags.includes(tag) && <span style={{ marginLeft: 4 }}>✕</span>}
+                  {label}
+                  <span style={{ opacity: 0.55 }}>{count}</span>
+                  {active && <span style={{ opacity: 0.7 }}>✕</span>}
                 </span>
-              ))}
-            </div>
-            {selectedTags.length > 0 && (
+              )
+            })}
+
+            {/* Divider between freq and tag chips — only when both exist */}
+            {allFreqs.length > 1 && allTags.length > 0 && (
+              <span style={{ width: 1, height: 16, background: 'var(--border)', flexShrink: 0, alignSelf: 'center' }} />
+            )}
+
+            {/* Tag chips */}
+            {allTags.map(tag => {
+              const active = selectedTags.includes(tag)
+              return (
+                <span
+                  key={`tag-${tag}`}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                    padding: '4px 10px',
+                    background: active ? 'var(--accent-bg)' : 'var(--bg)',
+                    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                    borderRadius: 6, fontSize: 12, cursor: 'pointer',
+                    color: active ? 'var(--accent)' : 'var(--text)',
+                  }}
+                  onClick={() => setSelectedTags(prev =>
+                    prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
+                  )}
+                >
+                  {tag}
+                  <span style={{ opacity: 0.55 }}>{habits.filter(h => getTags(h).includes(tag)).length}</span>
+                  {active && <span style={{ opacity: 0.7 }}>✕</span>}
+                </span>
+              )
+            })}
+
+            {/* Clear all active filters */}
+            {(selectedFreqs.length > 0 || selectedTags.length > 0) && (
               <button
                 className="btn btn-sm btn-ghost"
-                onClick={() => setSelectedTags([])}
-                style={{ fontSize: 12 }}
+                onClick={() => { setSelectedFreqs([]); setSelectedTags([]) }}
+                style={{ fontSize: 12, marginLeft: 2 }}
               >
-                Clear ({displayedHabits.length})
+                Clear all
               </button>
             )}
+
           </div>
         </div>
       )}
@@ -653,20 +730,48 @@ const effectiveFilterHabitIds =
         <div className="card">
           <p className="empty-hint">No habits yet. Add your first one!</p>
         </div>
-        ) : (
-        displayedHabits.map(h => (
-          <HabitRow
-            key={h.id}
-            habit={h}
-            logs={logs}
-            selectedDateKey={selectedPastDateKey}
-            onToggle={handleToggle}
-            onEdit={() => setModal(h)}
-            onArchive={() => archiveHabit(h)}
-            showStreak={!isMobile}
-          />
-        ))
-      )}
+        ) : (() => {
+          // Render with frequency group dividers (daily → weekly → custom)
+          const elements: React.ReactNode[] = []
+          let lastFreq: string | null = null
+          const freqLabel: Record<string, string> = { daily: 'Daily', weekly: 'Weekly', custom: 'Custom' }
+          displayedHabits.forEach(h => {
+            if (h.frequency !== lastFreq) {
+              lastFreq = h.frequency
+              elements.push(
+                <div
+                  key={`divider-${h.frequency}`}
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    letterSpacing: '0.07em',
+                    textTransform: 'uppercase',
+                    color: 'var(--text-dim)',
+                    padding: '4px 2px 2px',
+                    marginTop: elements.length > 0 ? 8 : 0,
+                  }}
+                >
+                  {freqLabel[h.frequency] ?? h.frequency}
+                </div>
+              )
+            }
+            elements.push(
+              <HabitRow
+                key={h.id}
+                habit={h}
+                logs={logs}
+                selectedDateKey={selectedPastDateKey}
+                onToggle={handleToggle}
+                onEdit={() => setModal(h)}
+                onArchive={() => archiveHabit(h)}
+                showStreak={!isMobile}
+                periodDoneCount={getPeriodDoneCount(h)}
+              />
+            )
+          })
+          return elements
+        })()
+      }
 
 
       {/* Habit Heatmap Section */}
@@ -756,6 +861,7 @@ const effectiveFilterHabitIds =
           initial={modal === 'new' ? undefined : modal}
           onSave={saveHabit}
           onClose={() => setModal(null)}
+          onArchive={modal !== 'new' ? (h) => { archiveHabit(h); setModal(null) } : undefined}
         />
       )}
 
@@ -799,4 +905,3 @@ const effectiveFilterHabitIds =
     </div>
   )
 }
-

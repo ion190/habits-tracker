@@ -9,19 +9,31 @@ export const HABIT_SORT_OPTIONS = [
   { value: 'frequency', label: 'Frequency' },
 ] as const
 
+// Frequency group order: daily → weekly → custom
+const FREQ_ORDER: Record<string, number> = { daily: 0, weekly: 1, custom: 2 }
+
+function freqGroup(h: Habit): number {
+  return FREQ_ORDER[h.frequency] ?? 3
+}
+
 export function sortHabits(
   habits: Habit[],
   sortOrder: 'name' | 'created' | 'color' | 'frequency' | string,
 ) {
-  if (sortOrder === 'name') {
-    return [...habits].sort((a, b) => a.name.localeCompare(b.name))
-  } else if (sortOrder === 'created') {
-    return [...habits].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
-  } else if (sortOrder === 'color') {
-    return [...habits].sort((a, b) => (a.color || '').localeCompare(b.color || ''))
-  } else if (sortOrder === 'frequency') {
-    return [...habits].sort((a, b) => (a.frequency || '').localeCompare(b.frequency || ''))
+  // Secondary comparator based on selected sort
+  function secondary(a: Habit, b: Habit): number {
+    if (sortOrder === 'name') return a.name.localeCompare(b.name)
+    if (sortOrder === 'created') return (b.createdAt || '').localeCompare(a.createdAt || '')
+    if (sortOrder === 'color') return (a.color || '').localeCompare(b.color || '')
+    if (sortOrder === 'frequency') return (a.frequency || '').localeCompare(b.frequency || '')
+    return 0
   }
-  return habits
-}
 
+  return [...habits].sort((a, b) => {
+    // Primary: always group by frequency (daily first, then weekly, then custom)
+    const freqDiff = freqGroup(a) - freqGroup(b)
+    if (freqDiff !== 0) return freqDiff
+    // Secondary: user-chosen sort within each frequency group
+    return secondary(a, b)
+  })
+}

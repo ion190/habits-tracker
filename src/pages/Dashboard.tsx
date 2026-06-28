@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { db, generateId, dateKeyForPeriod } from '../db/database'
+import { db, generateId } from '../db/database'
 import type { CalendarActivity, CompletedWorkSession, WorkSessionCategory, JournalEntry, Habit, HabitLog, CompletedWorkout, Task } from '../db/database'
 import { sortHabits } from './habits/sortHabits'
 
@@ -122,6 +122,8 @@ function DayPopup({
   onClose: () => void
   onNavigate: (path: string) => void
 }) {
+
+
   const label = new Date(date + 'T00:00:00').toLocaleDateString('en-US', {
     weekday: 'short',
     month: 'short',
@@ -134,6 +136,7 @@ function DayPopup({
 
   return (
     <div
+      id="dashboard-day-popup"
       style={{
         position: 'absolute',
         top: '100%',
@@ -146,8 +149,13 @@ function DayPopup({
         padding: 14,
         width: 240,
         boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
+        maxHeight: 'min(60vh, 420px)',
+        overflowY: 'auto',
+        overscrollBehavior: 'contain',
       }}
     >
+
+
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
         <strong style={{ fontSize: 13 }}>{label}</strong>
         <button className="btn btn-ghost" style={{ padding: '0 4px', fontSize: 16 }} onClick={onClose}>
@@ -349,7 +357,7 @@ export default function Dashboard() {
       setWorkSessions(ws)
       setWorkSessionCategories(wsc)
 
-      const todayKeyLocal = dateKeyForPeriod('daily')
+      const todayKeyLocal = toDateKey(new Date().toISOString())
       const tomorrowDate = new Date()
       tomorrowDate.setDate(tomorrowDate.getDate() + 1)
       const tomorrowKeyLocal = toDateKey(tomorrowDate.toISOString())
@@ -357,29 +365,22 @@ export default function Dashboard() {
 
       const todaysAll = acts.filter((a: CalendarActivity) => a.date === todayKeyLocal)
 
-      // Split today's into future vs past vs ongoing.
-      // Include in-progress activities (start <= now <= end), which were previously dropped.
-      const futureTodays = todaysAll.filter((a: CalendarActivity) => {
-        const startDateTime = new Date(todayKeyLocal + 'T' + a.startTime + ':00')
-        return startDateTime > now
-      })
-
-      const pastTodays = todaysAll.filter((a: CalendarActivity) => {
-        const endDateTime = new Date(todayKeyLocal + 'T' + a.endTime + ':00')
-        return endDateTime < now
-      })
-
-      const ongoingTodays = todaysAll.filter((a: CalendarActivity) => {
-        const startDateTime = new Date(todayKeyLocal + 'T' + a.startTime + ':00')
-        const endDateTime = new Date(todayKeyLocal + 'T' + a.endTime + ':00')
-        return startDateTime <= now && endDateTime >= now
+      // Sort all of today's activities by start time.
+      // The old future/ongoing/past split silently dropped activities with null
+      // startTime or endTime because new Date('...Tnull:00') === Invalid Date.
+      const sortedTodaysAll = [...todaysAll].sort((a, b) => {
+        const aStart = a.startTime || '99:99'   // no-time entries go last
+        const bStart = b.startTime || '99:99'
+        return aStart.localeCompare(bStart)
       })
 
       const tomorrowActs = acts.filter((a: CalendarActivity) => a.date === tomorrowKeyLocal)
 
-      // Future first, then ongoing, then past
-      setTodaysActivities([...futureTodays, ...ongoingTodays, ...pastTodays])
-      setTodaysFutureActivities(futureTodays)
+      setTodaysActivities(sortedTodaysAll)
+      setTodaysFutureActivities(sortedTodaysAll.filter((a: CalendarActivity) => {
+        if (!a.startTime) return false
+        return new Date(todayKeyLocal + 'T' + a.startTime + ':00') > now
+      }))
       setTomorrowActivities(tomorrowActs)
 
       const jEntry = await db.journalEntries.filter(e => e.period === 'daily' && e.dateKey === todayKeyLocal).first()
@@ -446,7 +447,27 @@ export default function Dashboard() {
   })
 
   const allActiveTasks = tasks.filter((t) => !t.archivedAt && !t.completedAt)
-  const tasksForDashboard = taskFilter === 'today' ? todaysTasks : allActiveTasks
+
+  // Overdue: incomplete tasks whose due date is strictly before today
+  const overdueTasks = tasks.filter(t => {
+    if (t.archivedAt) return false
+    if (!t.dueDate) return false
+    const dueDateKey = t.dueDate.slice(0, 10)
+    if (dueDateKey >= today) return false
+    // Non-recurring: skip if already completed at any point
+    if (!t.recurrence && t.completedAt) return false
+    // Recurring: skip if the current instance was completed today or later
+    if (t.recurrence && t.completedAt && toDateKey(t.completedAt) >= today) return false
+    return true
+  })
+
+  // Combined list used by the Today filter and the Today's Activities card
+  const allTodayAndOverdue = [
+    ...todaysTasks,
+    ...overdueTasks.filter(ot => !todaysTasks.some(tt => tt.id === ot.id)),
+  ]
+
+  const tasksForDashboard = taskFilter === 'today' ? allTodayAndOverdue : allActiveTasks
 
 
   // Eisenhower matrix grouping (urgent/important) from active tasks
@@ -616,10 +637,94 @@ export default function Dashboard() {
 
       {/* Dashboard top row: Calendar + Today Tasks + 3 stats (desktop in one row, mobile stacked) */}
       <div className="dashboard-top-grid">
+        {/* Today's Activities — only rendered when there is something to show */}
+      {(todaysActivities.length > 0 || allTodayAndOverdue.length > 0) && (
+        <section className="card">
+          <h2 className="card-title">Today's Activities</h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+
+            {/* Calendar activities for today */}
+            {todaysActivities.length > 0 && (
+              <>
+                {allTodayAndOverdue.length > 0 && (
+                  <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-dim)', margin: '0 0 4px', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                    Schedule
+                  </p>
+                )}
+                {todaysActivities.map((a) => {
+                  const startDt = a.startTime ? new Date(today + 'T' + a.startTime + ':00') : null
+                  const endDt   = a.endTime   ? new Date(today + 'T' + a.endTime   + ':00') : null
+                  const isOngoing = startDt && endDt && startDt <= now && endDt >= now
+                  const isPast    = endDt != null && endDt < now
+                  return (
+                    <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 8, background: 'var(--card-bg)', borderRadius: 8, opacity: isPast ? 0.55 : 1 }}>
+                      <span className="habit-dot-sm" style={{ background: a.color || '#3b82f6' }} />
+                      <div style={{ flex: 1 }}>
+                        <span style={{ fontWeight: 500 }}>{a.title}</span>
+                        {a.startTime && (
+                          <span style={{ color: 'var(--text-dim)', fontSize: 13 }}> {a.startTime}–{a.endTime}</span>
+                        )}
+                        {isOngoing && (
+                          <span style={{ fontSize: 11, color: '#22c55e', marginLeft: 6, fontWeight: 600 }}>● now</span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </>
+            )}
+
+            {/* Today's tasks + overdue tasks */}
+            {allTodayAndOverdue.length > 0 && (
+              <>
+                {todaysActivities.length > 0 && (
+                  <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-dim)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                    Tasks
+                  </p>
+                )}
+                {allTodayAndOverdue.map(task => {
+                  const isOverdue = overdueTasks.some(ot => ot.id === task.id)
+                  return (
+                    <div
+                      key={task.id}
+                      style={{ display: 'flex', alignItems: 'center', gap: 2, padding: 6, background: 'var(--card-bg)', borderRadius: 8, cursor: 'pointer' }}
+                      onClick={() => navigate('/tasks?taskId=' + task.id)}
+                    >
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        style={{ width: 30, height: 30, borderRadius: 8, flexShrink: 0 }}
+                        onClick={e => { e.stopPropagation(); toggleTaskDone(task) }}
+                        title="Mark as done"
+                      >
+                        ○
+                      </button>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontWeight: 600, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-h)' }}>
+                          {task.title}
+                        </p>
+                        {isOverdue && task.dueDate && (
+                          <p style={{ margin: 0, fontSize: 11, color: 'var(--danger)' }}>
+                            ⚠ Overdue · {new Date(task.dueDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </p>
+                        )}
+                        {!isOverdue && task.tags && task.tags.length > 0 && (
+                          <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>
+                            {task.tags.map(t => '#' + t).join(' ')}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </>
+            )}
+
+          </div>
+        </section>
+      )}
         {/* Calendar card (mini calendar + day popup) */}
         <section className="card dashboard-top-card" style={{ padding: 14 }}>
           <div className="dashboard-top-card__inner">
-            <h2 className="card-title">Calendar</h2>
 
             <div className="rs-card" style={{ border: 'none', padding: 0, background: 'transparent' }}>
               <div style={{ position: 'relative' }}>
@@ -641,7 +746,8 @@ export default function Dashboard() {
         </section>
 
 
-        {/* Today tasks card with + button */}
+
+ {/* Today tasks card with + button */}
         <section className="card" style={{ padding: 14,  }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <h2 className="card-title" style={{ marginBottom: 0 }}>Tasks</h2>
@@ -718,88 +824,14 @@ export default function Dashboard() {
             )}
           </div>
         </section>
+       
 
-        {/* 3 stats in one section */}
-        <section className="card" style={{ padding: 14 }}>
-          <h2 className="card-title" style={{ marginBottom: 14 }}>Today & This Week</h2>
-          <div className="stats-row stats-col" >
-
-            <div className="stat-card" style={{ minHeight: 110 }}>
-              <p className="stat-label">Habits</p>
-              <p className="stat-value">{todayLogs.length}/{habits.length}</p>
-              <p className="stat-sub">done today</p>
-            </div>
-            <div className="stat-card" style={{ minHeight: 110 }}>
-              <p className="stat-label">Journal</p>
-              <p className="stat-value">{todayJournal ? '✍️' : '—'}</p>
-              <p className="stat-sub" style={{ color: todayJournal ? '#22c55e' : undefined }}>
-                {todayJournal ? 'written today' : 'not written'}
-              </p>
-            </div>
-            <div className="stat-card" style={{ gridColumn: 'span 2', minHeight: 110 }}>
-              <p className="stat-label">Workouts</p>
-              <p className="stat-value">{weekWorkouts.length}/{weeklyTarget}</p>
-              <p className="stat-sub">this week</p>
-            </div>
-          </div>
-        </section>
+       
       </div>
 
     
 
-      <section className="card">
-        <h2 className="card-title">Today's Activities</h2>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12 }}>
-          {todaysActivities.length === 0 ? (
-            <>
-              <p className="empty-hint" style={{ marginBottom: 12 }}>No activities planned today</p>
-              {tomorrowActivities.length > 0 && (
-                <>
-                  <p style={{ fontSize: 13, color: 'var(--text-dim)', marginBottom: 8, fontWeight: 500 }}>Tomorrow</p>
-                  {tomorrowActivities.map((a) => (
-                    <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 8, background: 'var(--card-bg)', borderRadius: 8 }}>
-                      <span className="habit-dot-sm" style={{ background: a.color || '#3b82f6' }} />
-                      <div style={{ flex: 1 }}>
-                        <span style={{ fontWeight: 500 }}>{a.title}</span>
-                        <span style={{ color: 'var(--text-dim)', fontSize: 13 }}> {a.startTime}–{a.endTime}</span>
-                      </div>
-                    </div>
-                  ))}
-                </>
-              )}
-            </>
-          ) : (
-            todaysActivities.map((a) => (
-              <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 8, background: 'var(--card-bg)', borderRadius: 8 }}>
-                <span className="habit-dot-sm" style={{ background: a.color || '#3b82f6' }} />
-                <div style={{ flex: 1 }}>
-                  <span style={{ fontWeight: 500 }}>{a.title}</span>
-                  <span style={{ color: 'var(--text-dim)', fontSize: 13 }}> {a.startTime}–{a.endTime}</span>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </section>
-
-      {todaysTasks.length > 0 && (
-        <section className="card">
-          <h2 className="card-title">Today's Tasks</h2>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12 }}>
-            {todaysTasks.map((task) => (
-              <div key={task.id} style={{ padding: 8, background: 'var(--card-bg)', borderRadius: 8, cursor: 'pointer' }} 
-                   onClick={() => navigate('/tasks?taskId=' + task.id)}>
-                <span style={{ fontWeight: 500 }}>{task.title}</span>
-                {task.tags.length > 0 && (
-                  <span style={{ fontSize: 12, color: 'var(--text-dim)', marginLeft: 8 }}>
-                    {task.tags.map(t => '#' + t).join(' ')}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
+      
 
       {valueModalHabit && (
         <HabitValueModal
@@ -1023,6 +1055,31 @@ export default function Dashboard() {
         )}
       </section>
 
+ {/* 3 stats in one section */}
+        <section className="card" style={{ padding: 14 }}>
+          <h2 className="card-title" style={{ marginBottom: 14 }}>Today & This Week</h2>
+          <div className="stats-row stats-col" >
+
+            <div className="stat-card" style={{ minHeight: 110 }}>
+              <p className="stat-label">Habits</p>
+              <p className="stat-value">{todayLogs.length}/{habits.length}</p>
+              <p className="stat-sub">done today</p>
+            </div>
+            <div className="stat-card" style={{ minHeight: 110 }}>
+              <p className="stat-label">Journal</p>
+              <p className="stat-value">{todayJournal ? '✍️' : '—'}</p>
+              <p className="stat-sub" style={{ color: todayJournal ? '#22c55e' : undefined }}>
+                {todayJournal ? 'written today' : 'not written'}
+              </p>
+            </div>
+            <div className="stat-card" style={{ gridColumn: 'span 2', minHeight: 110 }}>
+              <p className="stat-label">Workouts</p>
+              <p className="stat-value">{weekWorkouts.length}/{weeklyTarget}</p>
+              <p className="stat-sub">this week</p>
+            </div>
+          </div>
+        </section>
+
       <section className="card">
         <h2 className="card-title">
           {workoutsFromPreviousWeek ? "Last week's workouts" : "This week's workouts"}
@@ -1045,8 +1102,7 @@ export default function Dashboard() {
         )}
       </section>
 
-
-        {/* Eisenhower Matrix at the bottom (same layout/logic as Tasks page) */}
+ {/* Eisenhower Matrix at the bottom (same layout/logic as Tasks page) */}
       <div
         style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}
         className="tasks-eisenhower-grid tasks-eisenhower-desktop only-desktop"
@@ -1167,9 +1223,9 @@ export default function Dashboard() {
         <TasksMobileQuadrant title="🟡 Delegate (Urgent, Not Important)" tasks={urgent_not_important} color="info" selectedTaskId={null} onSelectTask={(taskId) => navigate('/tasks?taskId=' + taskId)} onComplete={(task) => toggleTaskDone(task)} onEdit={(task) => { setEditingTask(task); openEditTaskModalFromDashboard(task) }} onArchive={(task) => archiveTaskFromDashboard(task)} />
         <TasksMobileQuadrant title="⚪ Eliminate (Neither)" tasks={not_urgent_not_important} color="ghost" selectedTaskId={null} onSelectTask={(taskId) => navigate('/tasks?taskId=' + taskId)} onComplete={(task) => toggleTaskDone(task)} onEdit={(task) => { setEditingTask(task); openEditTaskModalFromDashboard(task) }} onArchive={(task) => archiveTaskFromDashboard(task)} />
       </div>
+       
 
 
     </div>
   )
 }
-

@@ -656,6 +656,23 @@ export default function CalendarPage() {
     return () => clearTimeout(timeout)
   }, [])
 
+  // Strip runtime-only fields that are attached to pseudo-instances during load.
+  // These must never be persisted to Firestore — they only exist in memory.
+  function cleanActivityForSync(a: CalendarActivity): CalendarActivity {
+    const { ...clean } = a as CalendarActivity & { isRecurrenceInstance?: boolean; anchorDate?: string }
+    delete (clean as any).isRecurrenceInstance
+    delete (clean as any).anchorDate
+    // Also strip undefined from nested recurrence to avoid Firestore rejection
+    if (clean.recurrence) {
+      const rec = { ...clean.recurrence }
+      if (rec.targetDays === undefined) delete rec.targetDays
+      if (rec.endDate === undefined) delete rec.endDate
+      if (rec.interval === undefined) delete rec.interval
+      clean.recurrence = rec
+    }
+    return clean
+  }
+
   const saveActivity = async (a: CalendarActivity, scope: 'none' | 'instance' | 'forward' | 'series' = 'none', originalRecurring?: CalendarActivity) => {
     const splitDetails: string[] = []
     const toSync: { op: 'put' | 'delete'; record?: CalendarActivity; id?: string }[] = []
@@ -792,10 +809,16 @@ export default function CalendarPage() {
     setEditActivity(undefined)
     setOriginalRecurringActivity(undefined)
 
-    // Fire-and-forget remote sync after UI is updated.
+    // Remote sync — await each call so they aren't silently dropped on fast navigation.
+    // Also strip any runtime-only pseudo-instance fields (isRecurrenceInstance, anchorDate)
+    // that are attached during load and must never be persisted to Firestore.
     for (const s of toSync) {
-      if (s.op === 'delete' && s.id) sync.delete('calendarActivities', s.id)
-      else if (s.op === 'put' && s.record) sync.put('calendarActivities', s.record as unknown as Record<string, unknown>)
+      if (s.op === 'delete' && s.id) {
+        await sync.delete('calendarActivities', s.id)
+      } else if (s.op === 'put' && s.record) {
+        const clean = cleanActivityForSync(s.record)
+        await sync.put('calendarActivities', clean as unknown as Record<string, unknown>)
+      }
     }
   }
 
@@ -842,7 +865,7 @@ export default function CalendarPage() {
         .filter(a => (a.notes?.includes(`__EXCLUSION_FOR:${seriesId}__`) ?? false))
         .toArray()
       for (const exc of exclusions) {
-        sync.put('calendarActivities', exc as unknown as Record<string, unknown>)
+        await sync.put('calendarActivities', cleanActivityForSync(exc) as unknown as Record<string, unknown>)
       }
 
       await load()
@@ -874,7 +897,7 @@ export default function CalendarPage() {
             recurrence: { ...existing.recurrence!, endDate },
           }
           await db.calendarActivities.put(updated)
-          await sync.put('calendarActivities', updated as unknown as Record<string, unknown>)
+          await sync.put('calendarActivities', cleanActivityForSync(updated) as unknown as Record<string, unknown>)
         }
       } else {
         await db.calendarActivities.delete(id)
@@ -1138,7 +1161,7 @@ export default function CalendarPage() {
       // Use latest from state via ref trick — just re-read from db and save back
       setActivities(prev => {
         const act = prev.find(x => x.id === a.id)
-        if (act) sync.put('calendarActivities', act as unknown as Record<string, unknown>)
+        if (act) sync.put('calendarActivities', cleanActivityForSync(act) as unknown as Record<string, unknown>)
         return prev
       })
     }
@@ -1175,7 +1198,7 @@ export default function CalendarPage() {
       window.removeEventListener('mouseup', onUp)
       setActivities(prev => {
         const act = prev.find(x => x.id === a.id)
-        if (act) sync.put('calendarActivities', act as unknown as Record<string, unknown>)
+        if (act) sync.put('calendarActivities', cleanActivityForSync(act) as unknown as Record<string, unknown>)
         return prev
       })
     }
